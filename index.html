@@ -17,6 +17,8 @@
 <link rel="manifest" id="pwa-manifest">
 <title>أكاديمية المواهب الشابة - بئر قاصد علي</title>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;900&family=Tajawal:wght@700;800;900&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-database-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
 /* ===== ROOT VARIABLES ===== */
@@ -1995,65 +1997,58 @@ function load(){
 function genId(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
 
 // ============================================================
-// SYNC — مزامنة تلقائية بين جهازين عبر رمز مشترك
-// (يعتمد على خدمة تخزين مجانية خارجية kvdb.io كوسيط نقل فقط،
-//  دون الحاجة لخادم خاص بالأكاديمية. النسخ الاحتياطي اليدوي
-//  من "مركز النسخ الاحتياطي" يبقى الملاذ الأضمن دائماً.)
+// SYNC — مزامنة فورية بين جهازين عبر Firebase Realtime Database
 // ============================================================
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyB3dk7TXwybRK8XdkifPBAS7y4XrrJbYGY",
+  authDomain: "csajtb-sync.firebaseapp.com",
+  databaseURL: "https://csajtb-sync-default-rtdb.firebaseio.com",
+  projectId: "csajtb-sync",
+  storageBucket: "csajtb-sync.firebasestorage.app",
+  messagingSenderId: "949104740241",
+  appId: "1:949104740241:web:d6680278eb436e490ebc30"
+};
 let SYNC_CODE = localStorage.getItem('aca_sync_code') || null;
 let SYNC_ON = localStorage.getItem('aca_sync_on') === '1';
 let syncPushTimer = null;
-let syncPullTimer = null;
 let syncBusy = false;
-const SYNC_ENDPOINT = 'https://kvdb.io';
+let syncFbApp = null, syncFbRef = null, syncListenerAttached = false;
+
+function syncFirebaseReady(){
+  if(typeof firebase === 'undefined'){
+    console.error('Firebase SDK لم يُحمَّل (تحقق من الإنترنت عند فتح التطبيق لأول مرة)');
+    return false;
+  }
+  if(!syncFbApp){
+    try{
+      syncFbApp = firebase.apps && firebase.apps.length ? firebase.apps[0] : firebase.initializeApp(FIREBASE_CONFIG);
+    }catch(e){ console.error('firebase init error', e); return false; }
+  }
+  return true;
+}
 
 function syncIsActive(){ return SYNC_ON && !!SYNC_CODE; }
 
 function scheduleSyncPush(){
   if(!syncIsActive())return;
   clearTimeout(syncPushTimer);
-  syncPushTimer=setTimeout(syncPush, 2500);
+  syncPushTimer=setTimeout(syncPush, 1200);
 }
 
-async function syncCreateBucket(){
-  const fakeEmail = 'sync-' + genId() + '@csajtb-academy.app';
-  const body = 'email=' + encodeURIComponent(fakeEmail);
-  let res;
-  try{
-    res = await fetch(SYNC_ENDPOINT + '/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: body
-    });
-  }catch(networkErr){
-    throw new Error('network');
-  }
-  if(!res.ok){
-    let detail = '';
-    try{ detail = await res.text(); }catch(e){}
-    console.error('syncCreateBucket failed', res.status, detail);
-    throw new Error('http_'+res.status);
-  }
-  const id = (await res.text()).trim();
-  if(!id) throw new Error('bucket_empty');
-  return id;
+function syncGenCode(){
+  const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let s='';
+  for(let i=0;i<8;i++) s+=chars[Math.floor(Math.random()*chars.length)];
+  return s;
 }
 
 async function syncPush(){
   if(!syncIsActive() || syncBusy) return;
+  if(!syncFirebaseReady()){ setSyncBadge(false); return; }
   syncBusy = true;
   try{
-    const payload = JSON.stringify({players,coaches,schedules,attendance,transactions,ratings,enrollments,notifications,academy});
-    const res = await fetch(SYNC_ENDPOINT+'/'+SYNC_CODE+'/aca_data', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: payload
-    });
-    if(!res.ok){
-      const detail = await res.text().catch(()=> '');
-      console.error('syncPush failed', res.status, detail);
-      throw new Error('http_'+res.status);
-    }
+    const payload = {players,coaches,schedules,attendance,transactions,ratings,enrollments,notifications,academy};
+    await firebase.database().ref('academies/'+SYNC_CODE).set(payload);
     localStorage.setItem('aca_sync_last_ok', String(Date.now()));
     setSyncBadge(true);
   }catch(e){
@@ -2064,44 +2059,75 @@ async function syncPush(){
   }
 }
 
+function applyRemoteData(remote, manual){
+  players=remote.players||[]; coaches=remote.coaches||[]; schedules=remote.schedules||[];
+  attendance=remote.attendance||[]; transactions=remote.transactions||[]; ratings=remote.ratings||[];
+  enrollments=remote.enrollments||[]; notifications=remote.notifications||[];
+  if(remote.academy) academy=Object.assign(academy, remote.academy);
+  if(!academy.__meta)academy.__meta={updatedAt:Date.now()};
+  localStorage.setItem('aca_v2', JSON.stringify({players,coaches,schedules,attendance,transactions,ratings,enrollments,notifications,academy}));
+  refreshAllViews();
+  localStorage.setItem('aca_sync_last_ok', String(Date.now()));
+  setSyncBadge(true);
+  if(manual) toast('تمت المزامنة ✅ بيانات محدثة من الجهاز الآخر');
+}
+
+// سحب فوري لمرة واحدة (يُستخدم عند الانضمام أو زر "مزامنة الآن")
 async function syncPull(manual, force){
   if(!syncIsActive()){
     if(manual) toast('المزامنة غير مفعّلة بعد', 'error');
     return;
   }
+  if(!syncFirebaseReady()){ if(manual) toast('تعذر الاتصال بخدمة المزامنة، تحقق من الإنترنت', 'error'); return; }
   if(syncBusy) return;
   syncBusy = true;
   try{
-    const res = await fetch(SYNC_ENDPOINT+'/'+SYNC_CODE+'/aca_data');
-    if(res.status===404){
+    const snap = await firebase.database().ref('academies/'+SYNC_CODE).once('value');
+    if(!snap.exists()){
       if(manual) toast('لا توجد بيانات على هذا الرمز بعد — احفظ أي تعديل على الجهاز الآخر أولاً', 'error');
       setSyncBadge(true);
       return;
     }
-    if(!res.ok) throw new Error('pull_failed');
-    const txt = await res.text();
-    const remote = JSON.parse(txt);
+    const remote = snap.val();
     const remoteTime = (remote.academy && remote.academy.__meta && remote.academy.__meta.updatedAt) || 0;
     const localTime = (academy.__meta && academy.__meta.updatedAt) || 0;
     if(force || remoteTime > localTime){
-      players=remote.players||[]; coaches=remote.coaches||[]; schedules=remote.schedules||[];
-      attendance=remote.attendance||[]; transactions=remote.transactions||[]; ratings=remote.ratings||[];
-      enrollments=remote.enrollments||[]; notifications=remote.notifications||[];
-      if(remote.academy) academy=Object.assign(academy, remote.academy);
-      if(!academy.__meta)academy.__meta={updatedAt:remoteTime};
-      localStorage.setItem('aca_v2', JSON.stringify({players,coaches,schedules,attendance,transactions,ratings,enrollments,notifications,academy}));
-      refreshAllViews();
-      if(manual) toast('تمت المزامنة ✅ بيانات محدثة من الجهاز الآخر');
+      applyRemoteData(remote, manual);
     }else{
       if(manual) toast('بياناتك محدثة بالفعل ✅');
+      setSyncBadge(true);
     }
-    setSyncBadge(true);
   }catch(e){
-    if(manual) toast('تعذر الاتصال بخادم المزامنة، تحقق من الإنترنت', 'error');
+    console.error('syncPull error', e);
+    if(manual) toast('تعذر الاتصال بخدمة المزامنة، تحقق من الإنترنت', 'error');
     setSyncBadge(false);
   }finally{
     syncBusy = false;
   }
+}
+
+// استماع فوري حقيقي — يُطبَّق أي تغيير من الجهاز الآخر خلال أجزاء من الثانية
+function attachSyncListener(){
+  if(!syncIsActive() || !syncFirebaseReady()) return;
+  if(syncListenerAttached && syncFbRef) syncFbRef.off('value');
+  syncFbRef = firebase.database().ref('academies/'+SYNC_CODE);
+  syncFbRef.on('value', snap=>{
+    if(!snap.exists()) return;
+    const remote = snap.val();
+    const remoteTime = (remote.academy && remote.academy.__meta && remote.academy.__meta.updatedAt) || 0;
+    const localTime = (academy.__meta && academy.__meta.updatedAt) || 0;
+    if(remoteTime > localTime) applyRemoteData(remote, false);
+    else setSyncBadge(true);
+  }, err=>{
+    console.error('syncListener error', err);
+    setSyncBadge(false);
+  });
+  syncListenerAttached = true;
+}
+
+function detachSyncListener(){
+  if(syncFbRef){ try{ syncFbRef.off('value'); }catch(e){} }
+  syncFbRef = null; syncListenerAttached = false;
 }
 
 function refreshAllViews(){
@@ -2119,13 +2145,11 @@ function setSyncBadge(ok){
   if(!dot) return;
   if(!syncIsActive()){ dot.style.background='var(--text3)'; if(txt)txt.textContent='غير مفعّلة'; return; }
   dot.style.background = ok ? 'var(--green)' : 'var(--red)';
-  if(txt) txt.textContent = ok ? 'متصلة — آخر مزامنة: '+new Date(parseInt(localStorage.getItem('aca_sync_last_ok')||'0',10)||Date.now()).toLocaleTimeString('ar-DZ') : 'تعذر الاتصال';
+  if(txt) txt.textContent = ok ? 'متصلة (فورية) — آخر مزامنة: '+new Date(parseInt(localStorage.getItem('aca_sync_last_ok')||'0',10)||Date.now()).toLocaleTimeString('ar-DZ') : 'تعذر الاتصال';
 }
 
 function startSyncLoop(){
-  clearInterval(syncPullTimer);
-  if(!syncIsActive())return;
-  syncPullTimer = setInterval(()=>syncPull(false), 45000);
+  attachSyncListener();
   document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible' && syncIsActive()) syncPull(false); });
 }
 
@@ -2147,7 +2171,7 @@ function openSyncCenter(){
       </div>
       <button class="btn-primary" onclick="syncPull(true)">🔄 مزامنة الآن</button>
       <button class="btn-cancel" style="margin-top:8px;width:100%" onclick="syncDisable()">إيقاف المزامنة على هذا الجهاز</button>
-      <div class="l-hint" style="margin-top:10px">تُرسَل التعديلات تلقائياً بعد كل حفظ، وتُسحَب التحديثات كل حوالي 45 ثانية أو عند فتح التطبيق. آخر تعديل هو الذي يبقى دائماً — إن عدّل الجهازان معاً في نفس اللحظة، تُفضَّل النسخة الأحدث.</div>
+      <div class="l-hint" style="margin-top:10px">المزامنة فورية الآن — أي تعديل يظهر على الجهاز الآخر خلال ثوانٍ طالما التطبيق مفتوحاً ومتصلاً بالإنترنت. آخر تعديل هو الذي يبقى دائماً عند التعارض.</div>
     `:`
       <button class="btn-primary" onclick="syncGenerateNew()">➕ إنشاء رمز مزامنة جديد لهذا الجهاز</button>
       <div class="fg" style="margin-top:14px">
@@ -2155,17 +2179,18 @@ function openSyncCenter(){
         <input id="syncJoinInput" placeholder="الصق الرمز هنا">
       </div>
       <button class="btn-primary" style="background:linear-gradient(135deg,var(--blue),#1a6fd8)" onclick="syncJoinExisting()">🔗 انضمام برمز موجود</button>
-      <div class="l-hint" style="margin-top:10px">أنشئ رمزاً على أحد الجهازين، ثم أدخل نفس الرمز على الجهاز الآخر لبدء المزامنة التلقائية بينهما.</div>
+      <div class="l-hint" style="margin-top:10px">أنشئ رمزاً على أحد الجهازين، ثم أدخل نفس الرمز على الجهاز الآخر لبدء المزامنة الفورية بينهما.</div>
     `}
   `;
   openModal('syncCenterOverlay');
 }
 
 async function syncGenerateNew(){
+  if(!syncFirebaseReady()){ toast('تعذر تحميل خدمة المزامنة، تحقق من الإنترنت وأعد فتح التطبيق', 'error'); return; }
   toast('جارٍ إنشاء رمز المزامنة...');
   try{
-    const id = await syncCreateBucket();
-    SYNC_CODE = id; SYNC_ON = true;
+    const code = syncGenCode();
+    SYNC_CODE = code; SYNC_ON = true;
     localStorage.setItem('aca_sync_code', SYNC_CODE);
     localStorage.setItem('aca_sync_on', '1');
     save(); // يضمن وجود توقيت تعديل حقيقي قبل أول رفع للبيانات
@@ -2176,30 +2201,25 @@ async function syncGenerateNew(){
     openSyncCenter();
   }catch(e){
     console.error('syncGenerateNew error', e);
-    const msg = String(e && e.message || '');
-    let text = 'تعذر إنشاء رمز المزامنة، حاول مرة أخرى بعد قليل';
-    if(msg==='network') text = 'تعذر الوصول لخادم المزامنة، تحقق من الإنترنت';
-    else if(msg.indexOf('http_429')===0) text = 'محاولات كثيرة جداً، انتظر قليلاً ثم أعد المحاولة';
-    else if(msg.indexOf('http_')===0) text = 'رفض خادم المزامنة الطلب (كود '+msg.replace('http_','')+')';
-    toast(text, 'error');
+    toast('تعذر إنشاء رمز المزامنة، تحقق من الإنترنت وحاول مرة أخرى', 'error');
   }
 }
 
 function syncJoinExisting(){
-  const v = (document.getElementById('syncJoinInput').value||'').trim();
+  if(!syncFirebaseReady()){ toast('تعذر تحميل خدمة المزامنة، تحقق من الإنترنت وأعد فتح التطبيق', 'error'); return; }
+  const v = (document.getElementById('syncJoinInput').value||'').trim().toUpperCase();
   if(!v){ toast('أدخل الرمز أولاً', 'error'); return; }
   SYNC_CODE = v; SYNC_ON = true;
   localStorage.setItem('aca_sync_code', SYNC_CODE);
   localStorage.setItem('aca_sync_on', '1');
-  startSyncLoop();
-  syncPull(true, true); // انضمام = استبدال بيانات هذا الجهاز ببيانات الرمز دائماً، بلا مقارنة توقيت
+  syncPull(true, true).then(()=>startSyncLoop()); // انضمام = استبدال بيانات هذا الجهاز ببيانات الرمز دائماً، ثم تفعيل الاستماع الفوري
   openSyncCenter();
 }
 
 function syncDisable(){
   SYNC_ON = false;
   localStorage.setItem('aca_sync_on', '0');
-  clearInterval(syncPullTimer);
+  detachSyncListener();
   toast('تم إيقاف المزامنة على هذا الجهاز');
   openSyncCenter();
 }
@@ -2211,7 +2231,7 @@ function syncCopyCode(){
   catch(e){ navigator.clipboard && navigator.clipboard.writeText(inp.value).then(()=>toast('تم نسخ الرمز 📋')); }
 }
 
-window.addEventListener('load', ()=>{ if(syncIsActive()) startSyncLoop(); });
+window.addEventListener('load', ()=>{ if(syncIsActive() && syncFirebaseReady()) startSyncLoop(); });
 function toast(msg,type='success'){
   const t=document.getElementById('toast');
   t.textContent=msg;t.className='show '+(type==='error'?'error':'success');
