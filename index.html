@@ -1989,6 +1989,8 @@ function load(){
       if(p.academy)academy=Object.assign(academy,p.academy);
     }
   }catch(e){console.error(e)}
+  if(!academy.__meta)academy.__meta={updatedAt:0};
+  if(typeof academy.__meta.updatedAt!=='number')academy.__meta.updatedAt=0;
 }
 function genId(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
 
@@ -2062,7 +2064,7 @@ async function syncPush(){
   }
 }
 
-async function syncPull(manual){
+async function syncPull(manual, force){
   if(!syncIsActive()){
     if(manual) toast('المزامنة غير مفعّلة بعد', 'error');
     return;
@@ -2072,7 +2074,7 @@ async function syncPull(manual){
   try{
     const res = await fetch(SYNC_ENDPOINT+'/'+SYNC_CODE+'/aca_data');
     if(res.status===404){
-      if(manual) toast('لا توجد بيانات على هذا الرمز بعد — احفظ أي تعديل أولاً', 'error');
+      if(manual) toast('لا توجد بيانات على هذا الرمز بعد — احفظ أي تعديل على الجهاز الآخر أولاً', 'error');
       setSyncBadge(true);
       return;
     }
@@ -2081,12 +2083,13 @@ async function syncPull(manual){
     const remote = JSON.parse(txt);
     const remoteTime = (remote.academy && remote.academy.__meta && remote.academy.__meta.updatedAt) || 0;
     const localTime = (academy.__meta && academy.__meta.updatedAt) || 0;
-    if(remoteTime > localTime){
+    if(force || remoteTime > localTime){
       players=remote.players||[]; coaches=remote.coaches||[]; schedules=remote.schedules||[];
       attendance=remote.attendance||[]; transactions=remote.transactions||[]; ratings=remote.ratings||[];
       enrollments=remote.enrollments||[]; notifications=remote.notifications||[];
       if(remote.academy) academy=Object.assign(academy, remote.academy);
-      localStorage.setItem('aca_v2', txt);
+      if(!academy.__meta)academy.__meta={updatedAt:remoteTime};
+      localStorage.setItem('aca_v2', JSON.stringify({players,coaches,schedules,attendance,transactions,ratings,enrollments,notifications,academy}));
       refreshAllViews();
       if(manual) toast('تمت المزامنة ✅ بيانات محدثة من الجهاز الآخر');
     }else{
@@ -2165,7 +2168,9 @@ async function syncGenerateNew(){
     SYNC_CODE = id; SYNC_ON = true;
     localStorage.setItem('aca_sync_code', SYNC_CODE);
     localStorage.setItem('aca_sync_on', '1');
+    save(); // يضمن وجود توقيت تعديل حقيقي قبل أول رفع للبيانات
     await syncPush();
+    clearTimeout(syncPushTimer);
     startSyncLoop();
     toast('تم إنشاء رمز المزامنة ✅');
     openSyncCenter();
@@ -2187,7 +2192,7 @@ function syncJoinExisting(){
   localStorage.setItem('aca_sync_code', SYNC_CODE);
   localStorage.setItem('aca_sync_on', '1');
   startSyncLoop();
-  syncPull(true);
+  syncPull(true, true); // انضمام = استبدال بيانات هذا الجهاز ببيانات الرمز دائماً، بلا مقارنة توقيت
   openSyncCenter();
 }
 
