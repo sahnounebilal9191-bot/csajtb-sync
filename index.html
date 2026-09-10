@@ -1708,7 +1708,7 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="month"]::-webk
   <div class="fg" style="margin-top:10px"><label>ملاحظة</label><input type="text" id="mpNote" placeholder="اختياري"></div>
   <div class="form-actions">
     <button class="btn-cancel" onclick="closeModal('monthPayOverlay')">إلغاء</button>
-    <button class="btn-save" onclick="saveMonthPay()">✅ تسجيل الدفع</button>
+    <button class="btn-save" id="mpSaveBtn" onclick="saveMonthPay()">✅ تسجيل الدفع</button>
   </div>
 </div>
 </div>
@@ -3544,13 +3544,24 @@ function renderBudget(){
         ${t.note?`<div class="trans-method">📝 ${t.note}</div>`:''}
       </div>
       <div>
-        <div class="trans-amount ${isOut(t)?'out':'in'}">${isOut(t)?'-':'+'} ${t.amount.toLocaleString()} دج</div>
+        <div class="trans-amount ${isOut(t)?'out':'in'}">${isOut(t)?'-':'+'} ${t.amount.toLocaleString()} دج${t.edited?' <span title="تم تعديل هذه الدفعة" style="font-size:10px;color:var(--gold)">✏️</span>':''}</div>
         <div style="display:flex;gap:4px;margin-top:4px;justify-content:flex-end">
+          ${t.type==='payment'?`<button class="icon-act" style="width:24px;height:24px;font-size:10px" onclick="editPaymentTrans('${t.id}')">✏️</button>`:''}
           <button class="icon-act v" style="width:24px;height:24px;font-size:10px" onclick="showReceipt('${t.id}')">🧾</button>
           <button class="icon-act d" style="width:24px;height:24px;font-size:10px" onclick="deleteTrans('${t.id}')">🗑️</button>
         </div>
       </div>
     </div>`).join('');
+}
+function editPaymentTrans(id){
+  const t=transactions.find(x=>x.id===id);
+  if(!t||t.type!=='payment'){toast('لا يمكن تعديل هذا النوع من المعاملات من هنا','error');return;}
+  const p=players.find(x=>x.name===t.player);
+  if(!p){toast('تعذر العثور على اللاعب المرتبط بهذه الدفعة، عدّلها من إدارة الاشتراكات','error');return;}
+  const monthName=(t.desc||'').replace(' (جماعي)','').replace('اشتراك ','').trim();
+  const monthIdx=MONTHS.indexOf(monthName);
+  if(monthIdx<0){toast('تعذر تحديد الشهر تلقائياً، عدّلها من إدارة الاشتراكات','error');return;}
+  openMonthPay(p.id, monthIdx);
 }
 function methodLabel(m){return{cash:'نقداً',transfer:'تحويل بنكي',ccp:'CCP',baridi:'بريدي موب'}[m]||m}
 
@@ -3732,7 +3743,19 @@ function saveTrans(){
   save();renderBudget();closeModal('transOverlay');toast('تم حفظ المعاملة ✅');
 }
 function deleteTrans(id){
-  showConfirm('حذف المعاملة','هل تريد حذف هذه المعاملة؟',()=>{transactions=transactions.filter(x=>x.id!==id);save();renderBudget();toast('تم الحذف');});
+  showConfirm('حذف المعاملة','هل تريد حذف هذه المعاملة؟',()=>{
+    transactions=transactions.filter(x=>x.id!==id);
+    // إن كانت المعاملة مرتبطة بشهر اشتراك، أعد ذلك الشهر لحالة "غير مدفوع" لتبقى البيانات متطابقة
+    players.forEach(p=>{
+      const enr=getEnrollment(p.id);
+      Object.keys(enr.months||{}).forEach(mi=>{
+        if(enr.months[mi] && enr.months[mi].transactionId===id){
+          enr.months[mi]={status:'unpaid',amount:0,method:enr.months[mi].method,note:'',transactionId:null};
+        }
+      });
+    });
+    save();renderBudget();renderEnrollment();toast('تم الحذف');
+  });
 }
 function showReceipt(id){
   const t=transactions.find(x=>x.id===id);if(!t)return;
@@ -3855,7 +3878,7 @@ function renderEnrollment(){
         ${MONTH_ABBR.map((m,i)=>{
           const ms=enr.months[i]||{status:'unpaid',amount:0};
           const mSt=isFree?'free':ms.status;
-          return`<div class="enr-month ${mSt}" onclick="${isFree?'':'openMonthPay(\''+p.id+'\','+i+')'}" title="${MONTHS[i]} — ${isFree?'مجاني':ms.status==='paid'?ms.amount.toLocaleString()+' دج':'غير مدفوع'}" style="${isFree?'cursor:default;opacity:.7':''}">
+          return`<div class="enr-month ${mSt}" onclick="${isFree?'':'openMonthPay(\''+p.id+'\','+i+')'}" title="${MONTHS[i]} — ${isFree?'مجاني':ms.status==='paid'?ms.amount.toLocaleString()+' دج (اضغط لتعديل المبلغ)':'غير مدفوع (اضغط للدفع)'}" style="${isFree?'cursor:default;opacity:.7':''}">
             <div>${m}</div>
             ${isFree?'🆓':ms.status==='paid'?'✓':ms.status==='partial'?'~':''}
           </div>`;
@@ -3928,7 +3951,12 @@ function openMonthPay(playerId,monthIdx){
   const p=players.find(x=>x.id===playerId);if(!p)return;
   const enr=getEnrollment(playerId);
   const m=enr.months[monthIdx]||{};
-  document.getElementById('monthPayTitle').textContent=`💳 دفع اشتراك — ${p.name}`;
+  const isEdit = m.status==='paid' && m.amount>0;
+  document.getElementById('monthPayTitle').textContent = isEdit
+    ? `✏️ تعديل مبلغ دفعة — ${p.name}`
+    : `💳 دفع اشتراك — ${p.name}`;
+  const saveBtn = document.getElementById('mpSaveBtn');
+  if(saveBtn) saveBtn.textContent = isEdit ? '✏️ حفظ التعديل' : '✅ تسجيل الدفع';
   document.getElementById('mpPlayerId').value=playerId;
   document.getElementById('mpMonth').value=monthIdx;
   document.getElementById('mpAmount').value=m.amount||academy.fee||3000;
@@ -3990,19 +4018,62 @@ function saveMonthPay(){
   } else {
     months=[parseInt(document.getElementById('mpMonth').value)];
   }
+  let editedCount=0, createdCount=0;
   months.forEach(monthIdx=>{
-    enr.months[monthIdx]={status:amount>0?'paid':'unpaid',amount,method:mpMethod,note};
-    if(amount>0){
-      transactions.push({id:genId(),type:'payment',desc:`اشتراك ${MONTHS[monthIdx]}`,amount,date:new Date().toISOString().split('T')[0],method:mpMethod,note,player:p.name});
+    const prevRecord = enr.months[monthIdx] || {};
+    let existingTxId = prevRecord.transactionId || null;
+    if(!existingTxId && prevRecord.status==='paid' && prevRecord.amount>0){
+      // ربط تلقائي لمرة واحدة ببيانات قديمة سابقة لهذا التحديث (بحث بالاسم/الشهر/المبلغ القديم)
+      const guess = transactions.find(t=>t.type==='payment' && t.player===p.name && t.desc===`اشتراك ${MONTHS[monthIdx]}` && t.amount===prevRecord.amount);
+      if(guess) existingTxId = guess.id;
     }
+    let txId = existingTxId;
+    if(existingTxId){
+      const existingTx = transactions.find(t=>t.id===existingTxId);
+      if(existingTx){
+        if(amount>0){
+          // تصحيح دفعة سابقة — تعديل نفس السجل بدل تكرار معاملة جديدة
+          existingTx.amount = amount;
+          existingTx.method = mpMethod;
+          existingTx.note = note;
+          existingTx.desc = `اشتراك ${MONTHS[monthIdx]}`;
+          existingTx.edited = true;
+          editedCount++;
+        } else {
+          // إلغاء الدفع بالكامل — حذف المعاملة المرتبطة
+          transactions = transactions.filter(t=>t.id!==existingTxId);
+          txId = null;
+        }
+      } else if(amount>0){
+        // المعاملة الأصلية غير موجودة (بيانات قديمة) — أنشئ واحدة جديدة واربطها
+        const newTx = {id:genId(),type:'payment',desc:`اشتراك ${MONTHS[monthIdx]}`,amount,date:new Date().toISOString().split('T')[0],method:mpMethod,note,player:p.name};
+        transactions.push(newTx);
+        txId = newTx.id;
+        createdCount++;
+      }
+    } else if(amount>0){
+      const newTx = {id:genId(),type:'payment',desc:`اشتراك ${MONTHS[monthIdx]}`,amount,date:new Date().toISOString().split('T')[0],method:mpMethod,note,player:p.name};
+      transactions.push(newTx);
+      txId = newTx.id;
+      createdCount++;
+    }
+    enr.months[monthIdx]={status:amount>0?'paid':'unpaid',amount,method:mpMethod,note,transactionId:txId};
   });
   if(amount>0){
-    addNotif(`تم تسجيل دفعة ${months.length>1?months.length+' أشهر':MONTHS[months[0]]} لـ ${p.name}: ${(amount*months.length).toLocaleString()} دج`,'y');
+    if(editedCount && !createdCount){
+      addNotif(`تم تصحيح دفعة ${months.length>1?months.length+' أشهر':MONTHS[months[0]]} لـ ${p.name}: ${(amount*months.length).toLocaleString()} دج`,'y');
+    } else {
+      addNotif(`تم تسجيل دفعة ${months.length>1?months.length+' أشهر':MONTHS[months[0]]} لـ ${p.name}: ${(amount*months.length).toLocaleString()} دج`,'y');
+    }
     const stats=calcEnrStats(enr);
     if(stats.paidCount>=new Date().getMonth()+1)p.paid=true;
   }
   save();renderEnrollment();renderBudget();closeModal('monthPayOverlay');
-  toast(months.length>1?`تم تسجيل دفع ${months.length} أشهر ✅`:'تم تسجيل الدفع ✅');
+  if(editedCount && !createdCount){
+    toast(months.length>1?`تم تصحيح دفع ${months.length} أشهر ✅`:'تم تصحيح مبلغ الدفعة ✅');
+  } else {
+    toast(months.length>1?`تم تسجيل دفع ${months.length} أشهر ✅`:'تم تسجيل الدفع ✅');
+  }
 }
 function openGroupRenewal(){
   const now=new Date();
@@ -4111,10 +4182,34 @@ function applyGroupRenewal(){
     const enr=getEnrollment(playerId);
     const p=players.find(x=>x.id===playerId);
     months.forEach(monthIdx=>{
-      enr.months[monthIdx]={status:'paid',amount,method:grMethod,note:'تجديد جماعي'};
-      if(p){
-        transactions.push({id:genId(),type:'payment',desc:`اشتراك ${MONTHS[monthIdx]} (جماعي)`,amount,date:new Date().toISOString().split('T')[0],method:grMethod,player:p.name});
+      const prevRecord = enr.months[monthIdx] || {};
+      let existingTxId = prevRecord.transactionId || null;
+      if(!existingTxId && prevRecord.status==='paid' && prevRecord.amount>0 && p){
+        const guess = transactions.find(t=>t.type==='payment' && t.player===p.name && t.desc===`اشتراك ${MONTHS[monthIdx]}` && t.amount===prevRecord.amount);
+        if(guess) existingTxId = guess.id;
       }
+      let txId = existingTxId;
+      if(p){
+        if(existingTxId){
+          const existingTx = transactions.find(t=>t.id===existingTxId);
+          if(existingTx){
+            existingTx.amount = amount;
+            existingTx.method = grMethod;
+            existingTx.note = 'تجديد جماعي';
+            existingTx.desc = `اشتراك ${MONTHS[monthIdx]} (جماعي)`;
+            existingTx.edited = true;
+          } else {
+            const newTx={id:genId(),type:'payment',desc:`اشتراك ${MONTHS[monthIdx]} (جماعي)`,amount,date:new Date().toISOString().split('T')[0],method:grMethod,player:p.name};
+            transactions.push(newTx);
+            txId = newTx.id;
+          }
+        } else {
+          const newTx={id:genId(),type:'payment',desc:`اشتراك ${MONTHS[monthIdx]} (جماعي)`,amount,date:new Date().toISOString().split('T')[0],method:grMethod,player:p.name};
+          transactions.push(newTx);
+          txId = newTx.id;
+        }
+      }
+      enr.months[monthIdx]={status:'paid',amount,method:grMethod,note:'تجديد جماعي',transactionId:txId};
     });
     if(p){const stats=calcEnrStats(enr);if(stats.paidCount>=new Date().getMonth()+1)p.paid=true;}
   });
