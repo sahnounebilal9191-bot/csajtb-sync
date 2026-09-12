@@ -385,6 +385,7 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="month"]::-webk
 .enr-month.paid{background:var(--green-l);border-color:var(--green);color:var(--green)}
 .enr-month.unpaid{background:var(--red-l);border-color:var(--red);color:var(--red)}
 .enr-month.partial{background:var(--gold-l);border-color:var(--gold);color:var(--gold)}
+.enr-month.holiday{background:rgba(var(--purple-rgb),.12);border-color:rgba(var(--purple-rgb),.3);color:var(--purple);font-size:9px}
 .enr-month.future{background:var(--bg3);color:var(--text3)}
 .enr-totals{display:flex;justify-content:space-between;margin-top:10px;padding-top:8px;border-top:1px solid var(--border);font-size:11px}
 
@@ -2006,6 +2007,17 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="month"]::-webk
   <div class="fg"><label>المدينة / الحي</label><input type="text" id="acCity" placeholder="بئر قاصد علي"></div>
   <div class="fg"><label>رقم هاتف الأكاديمية</label><input type="tel" id="acPhone" placeholder="0555 000 000"></div>
   <div class="fg"><label>رسوم الاشتراك الشهري (دج)</label><input type="number" id="acFee" placeholder="3000" value="3000"></div>
+  <div class="fg">
+    <label>🏖️ شهر العطلة السنوية (للاعبين والطاقم بالكامل)</label>
+    <select id="acHolidayMonth">
+      <option value="">بدون عطلة</option>
+      <option value="0">جانفي</option><option value="1">فيفري</option><option value="2">مارس</option>
+      <option value="3">أفريل</option><option value="4">ماي</option><option value="5">جوان</option>
+      <option value="6">جويلية</option><option value="7">أوت</option><option value="8">سبتمبر</option>
+      <option value="9">أكتوبر</option><option value="10">نوفمبر</option><option value="11">ديسمبر</option>
+    </select>
+    <div class="l-hint">لن تُحتسب اشتراكات هذا الشهر على أي لاعب، ويظهر في الجدول كـ"عطلة"</div>
+  </div>
   <div class="form-actions">
     <button class="btn-cancel" onclick="closeModal('academySettingsOverlay')">إلغاء</button>
     <button class="btn-save" onclick="saveAcademySettings()">💾 حفظ</button>
@@ -2134,7 +2146,7 @@ const MONTH_ABBR = ['جان','فيف','مار','أفر','ماي','جوا','جو�
 const DAYS_AR = ['ح','ن','ث','ر','خ','ج','س'];
 
 let players = [], coaches = [], schedules = [], attendance = [], transactions = [], ratings = [], enrollments = [], notifications = [];
-let academy = {name:'أكاديمية المواهب الشابة',city:'بئر قاصد علي',phone:'',fee:3000};
+let academy = {name:'أكاديمية المواهب الشابة',city:'بئر قاصد علي',phone:'',fee:3000,holidayMonth:null};
 let currentFilter = 'ALL';
 let currentView = 'list';
 let calYear = new Date().getFullYear();
@@ -3945,8 +3957,10 @@ function getEnrollment(playerId){
   return e;
 }
 function calcEnrStats(enr){
-  const ms=enr.months||[];
+  const msAll=enr.months||[];
   const p=players.find(x=>x.id===enr.playerId);
+  const holidayM=(academy.holidayMonth!=null)?academy.holidayMonth:-1;
+  const ms=msAll.filter((m,i)=>i!==holidayM);
   if(p && p.freePlayer){
     const paidCount=ms.filter(m=>m.status==='paid'||m.status==='free').length;
     return{totalPaid:0,paidCount,totalDue:0,remaining:0,isFree:true};
@@ -4012,7 +4026,7 @@ function renderEnrollment(){
     const enr=getEnrollment(p.id);
     const stats=calcEnrStats(enr);
     const isFree=!!p.freePlayer;
-    const paidUpToNow=isFree||isFullyPaidUpToNow(enr);
+    const paidUpToNow=isFree||isFullyPaidUpToNow(enr,p);
     const curMonthUnpaid=!paidUpToNow;
     const pct=isFree?100:Math.round(stats.totalPaid/Math.max(stats.totalDue,1)*100);
     const barColor=isFree?'var(--blue)':pct>=100?'var(--green)':pct>50?'var(--gold)':'var(--red)';
@@ -4038,16 +4052,18 @@ function renderEnrollment(){
       </div>
       <div class="enr-months">
         ${MONTH_ABBR.map((m,i)=>{
+          const isHoliday=academy.holidayMonth===i;
           const ms=enr.months[i]||{status:'unpaid',amount:0};
-          const mSt=isFree?'free':ms.status;
-          return`<div class="enr-month ${mSt}" onclick="${isFree?'':'openMonthPay(\''+p.id+'\','+i+')'}" title="${MONTHS[i]} — ${isFree?'مجاني':ms.status==='paid'?ms.amount.toLocaleString()+' دج (اضغط لتعديل المبلغ)':'غير مدفوع (اضغط للدفع)'}" style="${isFree?'cursor:default;opacity:.7':''}">
+          const mSt=isHoliday?'holiday':isFree?'free':ms.status;
+          const clickable=!isFree&&!isHoliday;
+          return`<div class="enr-month ${mSt}" onclick="${clickable?'openMonthPay(\''+p.id+'\','+i+')':''}" title="${isHoliday?MONTHS[i]+' — عطلة سنوية (لا يوجد اشتراك)':MONTHS[i]+' — '+(isFree?'مجاني':ms.status==='paid'?ms.amount.toLocaleString()+' دج (اضغط لتعديل المبلغ)':'غير مدفوع (اضغط للدفع)')}" style="${!clickable?'cursor:default;opacity:.7':''}">
             <div>${m}</div>
-            ${isFree?'🆓':ms.status==='paid'?'✓':ms.status==='partial'?'~':''}
+            ${isHoliday?'🏖️':isFree?'🆓':ms.status==='paid'?'✓':ms.status==='partial'?'~':''}
           </div>`;
         }).join('')}
       </div>
       <div class="enr-totals">
-        ${isFree
+        ${academy.holidayMonth!=null&&!isFree?`<div style="width:100%;font-size:10px;color:var(--text3);margin-bottom:4px">🏖️ ${MONTHS[academy.holidayMonth]} عطلة سنوية — غير محتسب</div>`:''}        ${isFree
           ? `<span style="color:var(--blue)">🆓 لاعب مجاني — معفى من الرسوم</span>`
           : `<span style="color:var(--green)">✅ ${stats.paidCount}/12 شهر</span>
              <span style="color:${stats.remaining>0?'var(--red)':'var(--green)'}">💳 متبقي: ${stats.remaining.toLocaleString()} دج</span>`
@@ -4071,9 +4087,21 @@ function getCategoryFee(category){
   if(category==='U8'||category==='U10') return 1000;
   return academy.fee||1000;
 }
-function isFullyPaidUpToNow(enr){
+function getEnrollmentStartMonth(p){
+  if(!p||!p.joinDate) return 0;
+  const jd=new Date(p.joinDate);
+  if(isNaN(jd.getTime())) return 0;
+  const now=new Date();
+  if(jd.getFullYear()<now.getFullYear()) return 0;
+  if(jd.getFullYear()>now.getFullYear()) return 12; // انخراط مستقبلي — لا شيء مستحق بعد
+  return jd.getMonth();
+}
+function isFullyPaidUpToNow(enr,p){
   const cm=new Date().getMonth();
-  for(let i=0;i<=cm;i++){
+  const startM=getEnrollmentStartMonth(p);
+  const holidayM=(academy.holidayMonth!=null)?academy.holidayMonth:-1;
+  for(let i=startM;i<=cm;i++){
+    if(i===holidayM) continue;
     if(!enr.months[i]||enr.months[i].status!=='paid') return false;
   }
   return true;
@@ -4082,9 +4110,12 @@ function getUnpaidMonthsInfo(playerId){
   const p=players.find(x=>x.id===playerId);
   const enr=getEnrollment(playerId);
   const cm=new Date().getMonth();
+  const startM=getEnrollmentStartMonth(p);
+  const holidayM=(academy.holidayMonth!=null)?academy.holidayMonth:-1;
   const fee=getCategoryFee(p.category);
   const unpaidMonths=[];
-  for(let i=0;i<=cm;i++){
+  for(let i=startM;i<=cm;i++){
+    if(i===holidayM) continue;
     if(!enr.months[i]||enr.months[i].status!=='paid') unpaidMonths.push(MONTHS[i]);
   }
   return {unpaidMonths, fee, total:unpaidMonths.length*fee};
@@ -4228,6 +4259,7 @@ function toggleFreePlayer(playerId){
 }
 function openMonthPay(playerId,monthIdx){
   const p=players.find(x=>x.id===playerId);if(!p)return;
+  if(academy.holidayMonth===monthIdx){toast('هذا الشهر عطلة سنوية — لا يوجد اشتراك مستحق فيه','error');return;}
   const enr=getEnrollment(playerId);
   const m=enr.months[monthIdx]||{};
   const isEdit = m.status==='paid' && m.amount>0;
@@ -4297,6 +4329,8 @@ function saveMonthPay(){
   } else {
     months=[parseInt(document.getElementById('mpMonth').value)];
   }
+  if(academy.holidayMonth!=null) months=months.filter(i=>i!==academy.holidayMonth);
+  if(!months.length){toast('كل الأشهر المحددة ضمن العطلة السنوية — لا يوجد ما يُحفظ','error');return;}
   let editedCount=0, createdCount=0;
   months.forEach(monthIdx=>{
     const prevRecord = enr.months[monthIdx] || {};
@@ -4456,6 +4490,8 @@ function applyGroupRenewal(){
   } else {
     months=[parseInt(document.getElementById('grMonth').value)];
   }
+  if(academy.holidayMonth!=null) months=months.filter(i=>i!==academy.holidayMonth);
+  if(!months.length){toast('كل الأشهر المحددة ضمن العطلة السنوية — لا يوجد ما يُحفظ','error');return;}
   checked.forEach(el=>{
     const playerId=el.id.replace('gr-','');
     const enr=getEnrollment(playerId);
@@ -4673,6 +4709,7 @@ function openAcademySettings(){
   document.getElementById('acCity').value=academy.city;
   document.getElementById('acPhone').value=academy.phone||'';
   document.getElementById('acFee').value=academy.fee||3000;
+  document.getElementById('acHolidayMonth').value=(academy.holidayMonth!=null?String(academy.holidayMonth):'');
   openModal('academySettingsOverlay');
 }
 function saveAcademySettings(){
@@ -4680,7 +4717,9 @@ function saveAcademySettings(){
   academy.city=document.getElementById('acCity').value||academy.city;
   academy.phone=document.getElementById('acPhone').value;
   academy.fee=parseFloat(document.getElementById('acFee').value)||3000;
-  save();closeModal('academySettingsOverlay');toast('تم حفظ إعدادات الأكاديمية ✅');
+  const hm=document.getElementById('acHolidayMonth').value;
+  academy.holidayMonth=hm===''?null:parseInt(hm);
+  save();closeModal('academySettingsOverlay');toast('تم حفظ إعدادات الأكاديمية ✅');renderEnrollment();
 }
 
 // ══ حذف جميع البيانات ══
@@ -4700,7 +4739,7 @@ function nukeAllData(){
         // Reset all in-memory state
         players=[];collapsedSessions=new Set();attSearchQuery='';coaches=[];schedules=[];attendance=[];
         transactions=[];enrollments=[];ratings=[];notifications=[];
-        academy={name:'أكاديمية CSAJTB',city:'بئر قاصد علي',phone:'',fee:3000};
+        academy={name:'أكاديمية CSAJTB',city:'بئر قاصد علي',phone:'',fee:3000,holidayMonth:null};
         // Re-render everything
         renderDashboard();renderPlayers();renderCoaches();
         renderAttendance();renderBudget();renderEnrollment();
