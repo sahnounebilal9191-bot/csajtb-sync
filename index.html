@@ -1338,9 +1338,9 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="month"]::-webk
       <div style="display:flex;gap:6px;align-items:center;flex:1">
         <select id="budgetMonthSel" onchange="renderBudget()" style="flex:1;padding:8px 10px;background:var(--bg3);border:1.5px solid var(--border);border-radius:10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px;outline:none">
           <option value="">كل الأشهر</option>
-          <option value="01">يناير</option><option value="02">فبراير</option><option value="03">مارس</option>
-          <option value="04">أبريل</option><option value="05">مايو</option><option value="06">يونيو</option>
-          <option value="07">يوليو</option><option value="08">أغسطس</option><option value="09">سبتمبر</option>
+          <option value="01">جانفي</option><option value="02">فيفري</option><option value="03">مارس</option>
+          <option value="04">أفريل</option><option value="05">ماي</option><option value="06">جوان</option>
+          <option value="07">جويلية</option><option value="08">أوت</option><option value="09">سبتمبر</option>
           <option value="10">أكتوبر</option><option value="11">نوفمبر</option><option value="12">ديسمبر</option>
         </select>
         <select id="budgetYearSel" onchange="renderBudget()" style="width:80px;padding:8px 6px;background:var(--bg3);border:1.5px solid var(--border);border-radius:10px;color:var(--text);font-family:'Cairo',sans-serif;font-size:12px;outline:none">
@@ -1370,8 +1370,10 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="month"]::-webk
           <button class="print-btn" onclick="printEnrollment()">🖨️</button>
           <button class="print-btn" onclick="openReceiptsModal()" style="background:rgba(192,57,43,.12);border-color:rgba(192,57,43,.3);color:#c0392b;font-weight:900">📄 وصولات PDF</button>
           <button class="add-btn" onclick="openGroupRenewal()">🔄 تجديد جماعي</button>
+          <button class="add-btn" id="enrSelectToggleBtn" style="background:linear-gradient(135deg,var(--blue),#1a6fd8)" onclick="toggleEnrSelectMode()">☑️ تحديد متعدد</button>
         </div>
       </div>
+      <div id="enrBulkBar" style="display:none"></div>
       <div class="enr-cat-tabs">
         <button class="enr-cat-tab on" onclick="setEnrCat('ALL',this)">الكل</button>
         <button class="enr-cat-tab" onclick="setEnrCat('U8',this)">🌱 U8</button>
@@ -1815,17 +1817,17 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="month"]::-webk
     <div class="form-row">
       <div class="fg"><label>من شهر</label>
         <select id="mpFromMonth">
-          <option value="0">يناير</option><option value="1">فبراير</option><option value="2">مارس</option>
-          <option value="3">أبريل</option><option value="4">مايو</option><option value="5">يونيو</option>
-          <option value="6">يوليو</option><option value="7">أغسطس</option><option value="8">سبتمبر</option>
+          <option value="0">جانفي</option><option value="1">فيفري</option><option value="2">مارس</option>
+          <option value="3">أفريل</option><option value="4">ماي</option><option value="5">جوان</option>
+          <option value="6">جويلية</option><option value="7">أوت</option><option value="8">سبتمبر</option>
           <option value="9">أكتوبر</option><option value="10">نوفمبر</option><option value="11">ديسمبر</option>
         </select>
       </div>
       <div class="fg"><label>إلى شهر</label>
         <select id="mpToMonth">
-          <option value="0">يناير</option><option value="1">فبراير</option><option value="2">مارس</option>
-          <option value="3">أبريل</option><option value="4">مايو</option><option value="5">يونيو</option>
-          <option value="6">يوليو</option><option value="7">أغسطس</option><option value="8">سبتمبر</option>
+          <option value="0">جانفي</option><option value="1">فيفري</option><option value="2">مارس</option>
+          <option value="3">أفريل</option><option value="4">ماي</option><option value="5">جوان</option>
+          <option value="6">جويلية</option><option value="7">أوت</option><option value="8">سبتمبر</option>
           <option value="9">أكتوبر</option><option value="10">نوفمبر</option><option value="11">ديسمبر</option>
         </select>
       </div>
@@ -1863,9 +1865,9 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="month"]::-webk
   <div id="grSingleSection">
     <div class="fg"><label>الشهر</label>
       <select id="grMonth">
-        <option value="0">يناير</option><option value="1">فبراير</option><option value="2">مارس</option>
-        <option value="3">أبريل</option><option value="4">مايو</option><option value="5">يونيو</option>
-        <option value="6">يوليو</option><option value="7">أغسطس</option><option value="8">سبتمبر</option>
+        <option value="0">جانفي</option><option value="1">فيفري</option><option value="2">مارس</option>
+        <option value="3">أفريل</option><option value="4">ماي</option><option value="5">جوان</option>
+        <option value="6">جويلية</option><option value="7">أوت</option><option value="8">سبتمبر</option>
         <option value="9">أكتوبر</option><option value="10">نوفمبر</option><option value="11">ديسمبر</option>
       </select>
     </div>
@@ -1875,17 +1877,17 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="month"]::-webk
     <div class="form-row">
       <div class="fg"><label>من شهر</label>
         <select id="grFromMonth">
-          <option value="0">يناير</option><option value="1">فبراير</option><option value="2">مارس</option>
-          <option value="3">أبريل</option><option value="4">مايو</option><option value="5">يونيو</option>
-          <option value="6">يوليو</option><option value="7">أغسطس</option><option value="8">سبتمبر</option>
+          <option value="0">جانفي</option><option value="1">فيفري</option><option value="2">مارس</option>
+          <option value="3">أفريل</option><option value="4">ماي</option><option value="5">جوان</option>
+          <option value="6">جويلية</option><option value="7">أوت</option><option value="8">سبتمبر</option>
           <option value="9">أكتوبر</option><option value="10">نوفمبر</option><option value="11">ديسمبر</option>
         </select>
       </div>
       <div class="fg"><label>إلى شهر</label>
         <select id="grToMonth">
-          <option value="0">يناير</option><option value="1">فبراير</option><option value="2">مارس</option>
-          <option value="3">أبريل</option><option value="4">مايو</option><option value="5">يونيو</option>
-          <option value="6">يوليو</option><option value="7">أغسطس</option><option value="8">سبتمبر</option>
+          <option value="0">جانفي</option><option value="1">فيفري</option><option value="2">مارس</option>
+          <option value="3">أفريل</option><option value="4">ماي</option><option value="5">جوان</option>
+          <option value="6">جويلية</option><option value="7">أوت</option><option value="8">سبتمبر</option>
           <option value="9">أكتوبر</option><option value="10">نوفمبر</option><option value="11">ديسمبر</option>
         </select>
       </div>
@@ -1980,6 +1982,17 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="month"]::-webk
   <div id="themeCenterBody"></div>
   <div class="form-actions">
     <button class="btn-cancel" style="width:100%" onclick="closeModal('themeCenterOverlay')">إغلاق</button>
+  </div>
+</div>
+</div>
+
+<div class="overlay" id="smsQueueOverlay">
+<div class="modal">
+  <div class="modal-handle"></div>
+  <div class="modal-title">📩 إرسال تذكيرات الاشتراك</div>
+  <div id="smsQueueBody"></div>
+  <div class="form-actions">
+    <button class="btn-cancel" style="width:100%" onclick="cancelSmsQueue()">إنهاء</button>
   </div>
 </div>
 </div>
@@ -2116,8 +2129,8 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="month"]::-webk
 // ============================================================
 // DATA LAYER
 // ============================================================
-const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
-const MONTH_ABBR = ['ين','فب','مر','أب','مي','يو','يل','أغ','سب','أك','نو','ذي'];
+const MONTHS = ['جانفي','فيفري','مارس','أفريل','ماي','جوان','جويلية','أوت','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+const MONTH_ABBR = ['جان','فيف','مار','أفر','ماي','جوا','جوي','أوت','سبت','أكت','نوف','ديس'];
 const DAYS_AR = ['ح','ن','ث','ر','خ','ج','س'];
 
 let players = [], coaches = [], schedules = [], attendance = [], transactions = [], ratings = [], enrollments = [], notifications = [];
@@ -3984,19 +3997,31 @@ function renderEnrollment(){
       </div>`:''}
     </div>`;
   }
+  const bulkBar=document.getElementById('enrBulkBar');
+  if(bulkBar){
+    if(enrSelectMode){
+      bulkBar.style.display='block';
+      bulkBar.innerHTML=`<div style="display:flex;align-items:center;gap:8px;background:rgba(var(--blue-rgb),.08);border:1px solid rgba(var(--blue-rgb),.25);border-radius:12px;padding:10px 12px;margin-bottom:10px">
+        <div style="flex:1;font-size:12px;font-weight:700;color:var(--blue)">✅ محدَّد: ${enrSelected.size} لاعب</div>
+        <button class="add-btn" style="background:linear-gradient(135deg,var(--gold),#b8860b)" onclick="startBulkReminder()">📩 إرسال تذكير للمحدَّدين</button>
+      </div>`;
+    } else { bulkBar.style.display='none'; bulkBar.innerHTML=''; }
+  }
   if(!list.length){el.innerHTML=`<div class="empty"><div class="ei">📋</div><div class="et">لا يوجد لاعبون</div><div class="es">جرب فئة أخرى أو غير مصطلح البحث</div></div>`;return;}
   el.innerHTML=list.map(p=>{
     const enr=getEnrollment(p.id);
     const stats=calcEnrStats(enr);
     const isFree=!!p.freePlayer;
-    const curMonthUnpaid=!isFree&&(enr.months[new Date().getMonth()]||{}).status!=='paid';
+    const paidUpToNow=isFree||isFullyPaidUpToNow(enr);
+    const curMonthUnpaid=!paidUpToNow;
     const pct=isFree?100:Math.round(stats.totalPaid/Math.max(stats.totalDue,1)*100);
     const barColor=isFree?'var(--blue)':pct>=100?'var(--green)':pct>50?'var(--gold)':'var(--red)';
     return`<div class="enr-card-v2${isFree?' free-player-card':''}">
       <div class="enr-card-v2-header">
+        ${enrSelectMode?`<div onclick="toggleEnrPick('${p.id}',event)" style="flex-shrink:0;width:26px;height:26px;border-radius:8px;border:2px solid ${enrSelected.has(p.id)?'var(--blue)':'var(--border)'};background:${enrSelected.has(p.id)?'var(--blue)':'transparent'};display:flex;align-items:center;justify-content:center;font-size:14px;cursor:pointer">${enrSelected.has(p.id)?'✓':''}</div>`:''}
         <div class="enr-photo" style="flex-shrink:0">${photoEl(p,40)}</div>
         <div class="enr-v2-info">
-          <div class="enr-v2-name">${p.name}${isFree?'<span class="free-badge">🆓 مجاني</span>':''}</div>
+          <div class="enr-v2-name">${p.name}${isFree?'<span class="free-badge">🆓 مجاني</span>':`<span title="${paidUpToNow?'مسدّد حتى الآن':'متأخر في الدفع'}" style="margin-right:4px">${paidUpToNow?'🟢':'🔴'}</span>`}</div>
           <div class="enr-v2-cat">🏷️ ${p.category} · ${p.status==='active'?'<span style="color:var(--green)">نشط</span>':'<span style="color:var(--orange)">غير نشط</span>'}</div>
         </div>
         <div class="enr-v2-amount">
@@ -4046,18 +4071,116 @@ function getCategoryFee(category){
   if(category==='U8'||category==='U10') return 1000;
   return academy.fee||1000;
 }
+function isFullyPaidUpToNow(enr){
+  const cm=new Date().getMonth();
+  for(let i=0;i<=cm;i++){
+    if(!enr.months[i]||enr.months[i].status!=='paid') return false;
+  }
+  return true;
+}
+function getUnpaidMonthsInfo(playerId){
+  const p=players.find(x=>x.id===playerId);
+  const enr=getEnrollment(playerId);
+  const cm=new Date().getMonth();
+  const fee=getCategoryFee(p.category);
+  const unpaidMonths=[];
+  for(let i=0;i<=cm;i++){
+    if(!enr.months[i]||enr.months[i].status!=='paid') unpaidMonths.push(MONTHS[i]);
+  }
+  return {unpaidMonths, fee, total:unpaidMonths.length*fee};
+}
+function buildReminderMessage(playerId){
+  const p=players.find(x=>x.id===playerId);if(!p)return null;
+  const {unpaidMonths,fee,total}=getUnpaidMonthsInfo(playerId);
+  if(!unpaidMonths.length) return null;
+  const monthsText=unpaidMonths.length===1?unpaidMonths[0]:unpaidMonths.join('، ');
+  const monthsWord=unpaidMonths.length===1?'شهر':'أشهر';
+  return 'السلام عليكم،\n'
+    +'نود تذكيركم بأن اشتراك '+p.name+' (فئة '+p.category+') غير مسدَّد عن '+monthsWord+' '+monthsText+'.\n'
+    +'المبلغ الإجمالي المستحق: '+total.toLocaleString()+' دج (بواقع '+fee.toLocaleString()+' دج/شهر لدى '+(academy.name||'الأكاديمية')+').\n'
+    +'نشكر تعاونكم معنا، وفي انتظار تسديد المبلغ في أقرب وقت ممكن.\n'
+    +'تحياتنا.';
+}
 function sendSmsReminder(playerId){
   const p=players.find(x=>x.id===playerId);if(!p)return;
   if(!p.phone){toast('لا يوجد رقم هاتف مسجل لهذا اللاعب — أضفه من ملفه أولاً','error');return;}
-  const fee=getCategoryFee(p.category);
-  const monthName=MONTHS[new Date().getMonth()];
-  const msg='السلام عليكم،\n'
-    +'نود تذكيركم بموعد استحقاق اشتراك شهر '+monthName+' لـ '+p.name+' (فئة '+p.category+') بمبلغ '+fee.toLocaleString()+' دج لدى '+(academy.name||'الأكاديمية')+'.\n'
-    +'نشكر تعاونكم معنا، وفي انتظار تسديد المبلغ في أقرب وقت ممكن.\n'
-    +'تحياتنا.';
+  const msg=buildReminderMessage(playerId);
+  if(!msg){toast(p.name+' مسدّد بالكامل حتى الآن ✅');return;}
   const phone=(p.phone||'').replace(/\s+/g,'');
   const url='sms:'+phone+'?body='+encodeURIComponent(msg);
   window.location.href=url;
+}
+
+// ===== تحديد متعدد وإرسال تذكيرات جماعية =====
+let enrSelectMode=false;
+let enrSelected=new Set();
+let smsQueue=[];
+let smsQueueIdx=0;
+function toggleEnrSelectMode(){
+  enrSelectMode=!enrSelectMode;
+  if(!enrSelectMode)enrSelected.clear();
+  const btn=document.getElementById('enrSelectToggleBtn');
+  if(btn)btn.textContent=enrSelectMode?'✖️ إلغاء التحديد':'☑️ تحديد متعدد';
+  renderEnrollment();
+}
+function toggleEnrPick(playerId, ev){
+  if(ev)ev.stopPropagation();
+  if(enrSelected.has(playerId))enrSelected.delete(playerId);
+  else enrSelected.add(playerId);
+  renderEnrollment();
+}
+function startBulkReminder(){
+  const ids=Array.from(enrSelected);
+  if(!ids.length){toast('اختر لاعباً واحداً على الأقل','error');return;}
+  const withDebt=[];
+  let skipped=0;
+  ids.forEach(id=>{
+    const p=players.find(x=>x.id===id);if(!p)return;
+    if(!p.phone){skipped++;return;}
+    const msg=buildReminderMessage(id);
+    if(!msg){skipped++;return;}
+    withDebt.push({id,msg,phone:p.phone.replace(/\s+/g,''),name:p.name});
+  });
+  if(!withDebt.length){
+    toast('كل اللاعبين المحددين مسددون بالكامل أو بدون رقم هاتف مسجَّل ✅');
+    return;
+  }
+  if(skipped)toast('تم تجاوز '+skipped+' لاعب (مسدَّد أو بدون رقم هاتف)');
+  smsQueue=withDebt;
+  smsQueueIdx=0;
+  openSmsQueueModal();
+}
+function openSmsQueueModal(){
+  if(smsQueueIdx>=smsQueue.length){
+    closeModal('smsQueueOverlay');
+    toast('تم الانتهاء من قائمة التذكيرات ✅');
+    enrSelectMode=false;enrSelected.clear();renderEnrollment();
+    return;
+  }
+  const cur=smsQueue[smsQueueIdx];
+  document.getElementById('smsQueueBody').innerHTML=`
+    <div style="text-align:center;margin-bottom:16px">
+      <div style="font-size:12px;color:var(--text2)">لاعب ${smsQueueIdx+1} من ${smsQueue.length}</div>
+      <div style="font-size:17px;font-weight:900;margin-top:6px">${cur.name}</div>
+    </div>
+    <button class="btn-primary" onclick="sendCurrentQueueSms()">📩 فتح رسالة SMS لهذا اللاعب</button>
+    <button class="btn-cancel" style="width:100%;margin-top:8px" onclick="skipCurrentQueueSms()">تخطي هذا اللاعب</button>
+  `;
+  openModal('smsQueueOverlay');
+}
+function sendCurrentQueueSms(){
+  const cur=smsQueue[smsQueueIdx];
+  window.location.href='sms:'+cur.phone+'?body='+encodeURIComponent(cur.msg);
+  smsQueueIdx++;
+  setTimeout(openSmsQueueModal, 500);
+}
+function skipCurrentQueueSms(){
+  smsQueueIdx++;
+  openSmsQueueModal();
+}
+function cancelSmsQueue(){
+  closeModal('smsQueueOverlay');
+  smsQueue=[];smsQueueIdx=0;
 }
 function openEnrEdit(playerId){
   // open month pay in range mode so user can edit multiple months
