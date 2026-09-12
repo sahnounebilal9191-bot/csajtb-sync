@@ -3989,6 +3989,7 @@ function renderEnrollment(){
     const enr=getEnrollment(p.id);
     const stats=calcEnrStats(enr);
     const isFree=!!p.freePlayer;
+    const curMonthUnpaid=!isFree&&(enr.months[new Date().getMonth()]||{}).status!=='paid';
     const pct=isFree?100:Math.round(stats.totalPaid/Math.max(stats.totalDue,1)*100);
     const barColor=isFree?'var(--blue)':pct>=100?'var(--green)':pct>50?'var(--gold)':'var(--red)';
     return`<div class="enr-card-v2${isFree?' free-player-card':''}">
@@ -4031,6 +4032,7 @@ function renderEnrollment(){
         ${isFree
           ? `<button class="enr-action-btn" style="background:rgba(var(--blue-rgb),.12);color:var(--blue);border-color:rgba(var(--blue-rgb),.2);flex:1" onclick="toggleFreePlayer('${p.id}')">💰 إلغاء المجانية</button>`
           : `<button class="enr-action-btn pay" onclick="openMonthPay('${p.id}',${new Date().getMonth()})">💳 دفع الشهر</button>
+             <button class="enr-action-btn" style="${curMonthUnpaid?'background:rgba(var(--red-rgb),.12);color:var(--red);border-color:rgba(var(--red-rgb),.25)':'background:rgba(var(--gold-rgb),.12);color:var(--gold);border-color:rgba(var(--gold-rgb),.2)'}" onclick="sendSmsReminder('${p.id}')">${curMonthUnpaid?'🔴 تذكير بالدفع':'📩 تذكير'}</button>
              <button class="enr-action-btn" style="background:rgba(var(--blue-rgb),.12);color:var(--blue);border-color:rgba(var(--blue-rgb),.2)" onclick="toggleFreePlayer('${p.id}')">🆓 مجاني</button>
              <button class="enr-action-btn edit" onclick="openEnrEdit('${p.id}')">✏️</button>
              <button class="enr-action-btn del" onclick="resetEnrollment('${p.id}')">🗑️</button>`
@@ -4038,6 +4040,24 @@ function renderEnrollment(){
       </div>
     </div>`;
   }).join('');
+}
+function getCategoryFee(category){
+  if(category==='U14') return 1200;
+  if(category==='U8'||category==='U10') return 1000;
+  return academy.fee||1000;
+}
+function sendSmsReminder(playerId){
+  const p=players.find(x=>x.id===playerId);if(!p)return;
+  if(!p.phone){toast('لا يوجد رقم هاتف مسجل لهذا اللاعب — أضفه من ملفه أولاً','error');return;}
+  const fee=getCategoryFee(p.category);
+  const monthName=MONTHS[new Date().getMonth()];
+  const msg='السلام عليكم،\n'
+    +'نود تذكيركم بموعد استحقاق اشتراك شهر '+monthName+' لـ '+p.name+' (فئة '+p.category+') بمبلغ '+fee.toLocaleString()+' دج لدى '+(academy.name||'الأكاديمية')+'.\n'
+    +'نشكر تعاونكم معنا، وفي انتظار تسديد المبلغ في أقرب وقت ممكن.\n'
+    +'تحياتنا.';
+  const phone=(p.phone||'').replace(/\s+/g,'');
+  const url='sms:'+phone+'?body='+encodeURIComponent(msg);
+  window.location.href=url;
 }
 function openEnrEdit(playerId){
   // open month pay in range mode so user can edit multiple months
