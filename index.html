@@ -4613,6 +4613,9 @@ function openSeasonCenter(){
     </div>
     <button class="btn-primary" onclick="saveSeasonLabel()">💾 حفظ التسمية</button>
     <button class="add-btn" style="width:100%;justify-content:center;margin-top:10px;background:linear-gradient(135deg,var(--purple),#5b1fb0)" onclick="openReportDataForm()">📋 بيانات التقرير السنوي (المشاركات، الصعوبات، الأرقام المالية...)</button>
+    <button class="add-btn" style="width:100%;justify-content:center;margin-top:8px;background:linear-gradient(135deg,var(--gold),#b8860b)" onclick="openGaMembersManager()">👥 أعضاء الجمعية العامة</button>
+    <button class="add-btn" style="width:100%;justify-content:center;margin-top:8px;background:linear-gradient(135deg,var(--red),#a30d3f)" onclick="openConveneAssembly()">📢 عقد جمعية عامة (إشعار / دعوات / تنبيه)</button>
+    <button class="add-btn" style="width:100%;justify-content:center;margin-top:8px;background:linear-gradient(135deg,var(--orange),#c2571f)" onclick="openWorkProgramEditor()">📄 برنامج العمل والميزانية التقديرية</button>
     <div style="display:flex;gap:8px;margin-top:14px">
       <button class="add-btn" style="flex:1;justify-content:center" onclick="printFinancialReport()">📊 التقرير المالي</button>
       <button class="add-btn" style="flex:1;justify-content:center;background:linear-gradient(135deg,var(--blue),#1a6fd8)" onclick="printNarrativeReport()">📝 التقرير الأدبي</button>
@@ -4686,6 +4689,351 @@ function viewArchivedSeason(seasonId){
     <table style="margin-top:12px"><thead><tr><th>الفئة</th><th>العدد</th></tr></thead><tbody>${catRows}</tbody></table>
   `,'أرشيف السنة '+s.label);
 }
+// ============================================================
+// GENERAL ASSEMBLY — أعضاء الجمعية العامة، عقد الاجتماعات، والمراسلات الرسمية
+// ============================================================
+function getGaMembers(){
+  if(!Array.isArray(academy.gaMembers))academy.gaMembers=[];
+  return academy.gaMembers;
+}
+function getMeetings(){
+  if(!Array.isArray(academy.meetings))academy.meetings=[];
+  return academy.meetings;
+}
+function getWorkProgram(){
+  if(!academy.workProgram)academy.workProgram={};
+  const w=academy.workProgram;
+  if(!Array.isArray(w.technical))w.technical=[];
+  if(!Array.isArray(w.competitive))w.competitive=[];
+  if(!Array.isArray(w.administrative))w.administrative=[];
+  if(!Array.isArray(w.budgetIncome))w.budgetIncome=[];
+  if(!Array.isArray(w.budgetExpenses))w.budgetExpenses=[];
+  return w;
+}
+function nextSeasonYear(){ return parseInt(getSeasonLabel())+1 || (new Date().getFullYear()+1); }
+
+/* ---------- إدارة أعضاء الجمعية العامة ---------- */
+function openGaMembersManager(){
+  window._gaMembers=JSON.parse(JSON.stringify(getGaMembers()));
+  const box=document.getElementById('seasonCenterBody');
+  box.innerHTML=`
+    <div id="gaMembersList"></div>
+    <button class="add-btn" onclick="gaAddMember()">➕ إضافة عضو</button>
+    <button class="btn-primary" style="margin-top:16px" onclick="saveGaMembers()">💾 حفظ القائمة</button>
+    <button class="add-btn" style="width:100%;justify-content:center;margin-top:8px" onclick="printGaMembersList()">🖨️ طباعة القائمة الإسمية</button>
+    <button class="btn-cancel" style="width:100%;margin-top:8px" onclick="openSeasonCenter()">← رجوع</button>
+  `;
+  gaRenderMembers();
+  openModal('seasonCenterOverlay');
+}
+function gaRenderMembers(){
+  document.getElementById('gaMembersList').innerHTML=window._gaMembers.map((m,i)=>`
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px">
+      <div style="display:flex;gap:6px;margin-bottom:6px">
+        <div style="width:28px;text-align:center;font-weight:800;color:var(--text2);padding-top:10px">${i+1}</div>
+        <input type="text" placeholder="الاسم واللقب" value="${m.name||''}" oninput="window._gaMembers[${i}].name=this.value" style="flex:2">
+      </div>
+      <div style="display:flex;gap:6px">
+        <input type="text" placeholder="الصفة (رئيس، نائب، أمين مال، عضو...)" value="${m.role||''}" oninput="window._gaMembers[${i}].role=this.value" style="flex:2">
+        <input type="tel" placeholder="رقم الهاتف" value="${m.phone||''}" oninput="window._gaMembers[${i}].phone=this.value" style="flex:1">
+        <button class="icon-act d" onclick="gaRemoveMember(${i})">🗑️</button>
+      </div>
+    </div>`).join('')||'<div style="font-size:11px;color:var(--text3);text-align:center;padding:10px">لا يوجد أعضاء بعد</div>';
+}
+function gaAddMember(){window._gaMembers.push({id:genId(),name:'',role:'عضو',phone:''});gaRenderMembers();}
+function gaRemoveMember(i){window._gaMembers.splice(i,1);gaRenderMembers();}
+function saveGaMembers(){
+  academy.gaMembers=window._gaMembers.filter(m=>m.name&&m.name.trim());
+  save();
+  toast('تم حفظ قائمة أعضاء الجمعية العامة ✅');
+  openGaMembersManager();
+}
+function printGaMembersList(){
+  const members=getGaMembers();
+  const rows=members.map((m,i)=>`<tr><td>${i+1}</td><td>${m.name}</td><td>${m.role||''}</td><td></td></tr>`).join('')
+    ||'<tr><td colspan="4" style="text-align:center;color:#666">لا يوجد أعضاء مسجَّلون بعد</td></tr>';
+  const rd=getReportData();
+  const html=printHeader()+`
+    <div style="text-align:center;font-size:12px;line-height:1.9;margin-bottom:16px">
+      الجمهورية الجزائرية الديمقراطية الشعبية<br>
+      وزارة الشباب والرياضة<br>
+      ${rd.wilaya?`والية ${rd.wilaya} — مديرية الشباب والرياضة<br>`:''}
+      النادي الرياضي ألكاديمية ${academy.name||'الأكاديمية'}<br>
+      اختصاص: كرة القدم
+    </div>
+    <h3 style="text-align:center">القائمة الإسمية لأعضاء الجمعية العامة</h3>
+    <table><thead><tr><th>الرقم</th><th>الاسم واللقب</th><th>الصفة</th><th>الإمضاء</th></tr></thead><tbody>${rows}</tbody></table>
+  `;
+  openPrint(html,'القائمة الإسمية لأعضاء الجمعية العامة');
+}
+
+/* ---------- عقد جمعية عامة (عادية / غير عادية) ---------- */
+function openConveneAssembly(){
+  const rd=getReportData();
+  window._agenda=['عرض التقرير الأدبي لنشاط '+getSeasonLabel()+' والمناقشة والمصادقة عليه',
+                  'عرض التقرير المالي لسنة '+getSeasonLabel()+' والمناقشة والمصادقة عليه',
+                  'قراءة تقرير محافظ الحسابات'];
+  const box=document.getElementById('seasonCenterBody');
+  box.innerHTML=`
+    <div class="fg"><label>نوع الجمعية</label>
+      <select id="mtType">
+        <option value="العادية">عادية</option>
+        <option value="غير العادية (الاستثنائية)">غير عادية (استثنائية)</option>
+      </select>
+    </div>
+    <div class="fg"><label>الرقم (مرجع المراسلة)</label><input type="text" id="mtNumber" placeholder="مثال: ${nextSeasonYear()}/001"></div>
+    <div style="display:flex;gap:8px">
+      <div class="fg" style="flex:1"><label>التاريخ</label><input type="date" id="mtDate"></div>
+      <div class="fg" style="flex:1"><label>التوقيت</label><input type="text" id="mtTime" placeholder="مثال: 10:00 صباحاً"></div>
+    </div>
+    <div class="fg"><label>المكان</label><input type="text" id="mtLocation" value="مقر النادي" placeholder="مقر النادي - ${academy.city||''}"></div>
+    <div class="ab-sec-title">📋 جدول الأعمال</div>
+    <div id="mtAgendaList"></div>
+    <button class="add-btn" onclick="mtAddAgenda()">➕ إضافة نقطة</button>
+    <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
+      <button class="add-btn" style="flex:1;justify-content:center" onclick="printDirectorNotice()">🖨️ إشعار المدير</button>
+      <button class="add-btn" style="flex:1;justify-content:center;background:linear-gradient(135deg,var(--blue),#1a6fd8)" onclick="printMemberInvitations()">🖨️ دعوات الأعضاء</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+      <button class="add-btn" style="flex:1;justify-content:center;background:linear-gradient(135deg,var(--gold),#b8860b)" onclick="sendMeetingSmsToAll()">📩 SMS لكل الأعضاء</button>
+      <button class="add-btn" style="flex:1;justify-content:center;background:linear-gradient(135deg,var(--purple),#5b1fb0)" onclick="copyInvitationText()">📋 نسخ نص للنشر</button>
+    </div>
+    <button class="btn-cancel" style="width:100%;margin-top:14px" onclick="openSeasonCenter()">← رجوع</button>
+  `;
+  mtRenderAgenda();
+  openModal('seasonCenterOverlay');
+}
+function mtRenderAgenda(){
+  document.getElementById('mtAgendaList').innerHTML=window._agenda.map((a,i)=>`
+    <div style="display:flex;gap:6px;margin-bottom:6px">
+      <input type="text" value="${a}" oninput="window._agenda[${i}]=this.value">
+      <button class="icon-act d" onclick="mtRemoveAgenda(${i})">🗑️</button>
+    </div>`).join('');
+}
+function mtAddAgenda(){window._agenda.push('');mtRenderAgenda();}
+function mtRemoveAgenda(i){window._agenda.splice(i,1);mtRenderAgenda();}
+function getCurrentMeetingDraft(){
+  return{
+    type:(document.getElementById('mtType')||{}).value||'العادية',
+    number:(document.getElementById('mtNumber')||{}).value||'',
+    date:(document.getElementById('mtDate')||{}).value||'',
+    time:(document.getElementById('mtTime')||{}).value||'',
+    location:(document.getElementById('mtLocation')||{}).value||'مقر النادي',
+    agenda:(window._agenda||[]).filter(a=>a.trim())
+  };
+}
+function printDirectorNotice(){
+  const mt=getCurrentMeetingDraft();
+  const rd=getReportData();
+  const year=getSeasonLabel();
+  const agendaHtml=mt.agenda.map((a,i)=>`<li style="margin-bottom:4px">${a}</li>`).join('');
+  const html=printHeader()+`
+    <div style="text-align:center;font-size:12px;line-height:1.9;margin-bottom:16px">
+      الجمهورية الجزائرية الديمقراطية الشعبية<br>وزارة الشباب والرياضة
+    </div>
+    <p style="font-size:13px;font-weight:800;margin-bottom:16px">النادي الرياضي لأكاديمية ${academy.name||''} - ${academy.city||''}</p>
+    <div style="font-size:12.5px;margin-bottom:6px">الرقم: ${mt.number||'.......... '}</div>
+    <div style="font-size:12.5px;margin-bottom:16px">${academy.city||''} في: ${mt.date?new Date(mt.date).toLocaleDateString('ar-DZ'):'......................'}</div>
+    <p style="font-size:12.5px;margin-bottom:4px"><strong>السيد:</strong> رئيس النادي الرياضي لأكاديمية ${academy.name||''}</p>
+    <p style="font-size:12.5px;margin-bottom:16px"><strong>إلى السيد:</strong> مدير الشباب والرياضة لولاية ${rd.wilaya||'......................'}</p>
+    <p style="font-size:12.5px;font-weight:800;margin-bottom:10px">الموضوع: إشعار بعقد الجمعية العامة ${mt.type} لسنة ${year} (نشاط كرة القدم)</p>
+    <p style="font-size:12.5px;margin-bottom:12px">تحية رياضية وبعد،</p>
+    <p style="font-size:12.5px;line-height:2;margin-bottom:12px">
+      يشرفني أن أتقدم لسيادتكم المحترمة بهذا الإشعار، وذلك عملاً بأحكام القانون الأساسي للنادي، واستناداً إلى القوانين والتشريعات المعمول بها والمنظمة للأنشطة البدنية والرياضية.
+    </p>
+    <p style="font-size:12.5px;line-height:2;margin-bottom:12px">
+      نعلمكم من خلال هذه المراسلة بقرار مكتب النادي الرياضي "أكاديمية ${academy.name||''} - ${academy.city||''}" بعقد أشغال الجمعية العامة ${mt.type} الخاصة بالسنة المالية والرياضية ${year} (نشاط كرة القدم)، وذلك وفقاً للبيانات التالية:
+    </p>
+    <ul style="font-size:12.5px;line-height:2;padding-right:20px;margin-bottom:14px">
+      <li><strong>التاريخ:</strong> ${mt.date?new Date(mt.date).toLocaleDateString('ar-DZ'):'......................'}</li>
+      <li><strong>التوقيت:</strong> على الساعة ${mt.time||'......................'}</li>
+      <li><strong>المكان:</strong> ${mt.location}</li>
+    </ul>
+    <p style="font-size:12.5px;margin-bottom:8px">ويتضمن جدول أعمال هذه الجمعية النقاط التالية:</p>
+    <ol style="font-size:12.5px;line-height:2;padding-right:20px;margin-bottom:16px">${agendaHtml}</ol>
+    <p style="font-size:12.5px;margin-bottom:20px">وفي الأخير، تفضلوا سيدي المدير بقبول أسمى عبارات التقدير والاحترام.</p>
+    <div style="margin-top:30px;font-size:12px;font-weight:700;text-align:left">إمضاء وختم رئيس النادي الرياضي</div>
+  `;
+  openPrint(html,'إشعار بعقد الجمعية العامة '+year);
+}
+function buildInvitationHtml(mt, memberName, memberRole){
+  const year=getSeasonLabel();
+  return`<div style="page-break-after:always;page-break-inside:avoid;padding:10px">
+    <div style="text-align:center;font-size:12px;line-height:1.9;margin-bottom:16px">
+      الجمهورية الجزائرية الديمقراطية الشعبية<br>وزارة الشباب والرياضة
+    </div>
+    <p style="font-size:13px;font-weight:800;margin-bottom:16px">النادي الرياضي لأكاديمية ${academy.name||''} - ${academy.city||''} (CSAJTB)</p>
+    <div style="font-size:12.5px;margin-bottom:6px">الرقم: ${mt.number||'.......... '}</div>
+    <div style="font-size:12.5px;margin-bottom:16px">${academy.city||''} في: ${mt.date?new Date(mt.date).toLocaleDateString('ar-DZ'):'......................'}</div>
+    <p style="font-size:12.5px;margin-bottom:6px">إلى السيد: ${memberName||'......................'}</p>
+    <p style="font-size:12.5px;margin-bottom:20px">الصفة: ${memberRole||'عضو جمعية عامة'}</p>
+    <h2 style="text-align:center;font-size:34px;margin:20px 0">دعوة</h2>
+    <p style="font-size:12.5px;margin-bottom:12px">تحية رياضية خالصة وبعد،</p>
+    <p style="font-size:12.5px;line-height:2;margin-bottom:14px">
+      بناءً على القوانين الأساسية للنادي الرياضي، وحرصاً منا على التسيير الشفاف والتشاركي، يتشرف مكتب النادي الرياضي لأكاديمية ${academy.name||''} - ${academy.city||''}،
+      بدعوتكم رسمياً لحضور أشغال الجمعية العامة ${mt.type} المخصصة لتقييم الحصيلة السنوية وذلك لعرض التقريرين الأدبي والمالي لسنة ${year}.
+    </p>
+    <p style="font-size:12.5px;margin-bottom:8px">ستنعقد فعاليات هذه الجمعية وفقاً للبيانات التالية:</p>
+    <ul style="font-size:12.5px;line-height:2;padding-right:20px;margin-bottom:16px">
+      <li><strong>التاريخ:</strong> ${mt.date?new Date(mt.date).toLocaleDateString('ar-DZ'):'......................'}</li>
+      <li><strong>التوقيت:</strong> على الساعة ${mt.time||'......................'}</li>
+      <li><strong>المكان:</strong> ${mt.location}</li>
+    </ul>
+    <p style="font-size:12.5px;margin-bottom:20px">في انتظار حضوركم، تقبلوا منا أسمى عبارات التقدير والاحترام المتبادل.</p>
+    <div style="margin-top:30px;font-size:12px;font-weight:700;text-align:left">إمضاء وختم رئيس النادي الرياضي</div>
+  </div>`;
+}
+function printMemberInvitations(){
+  const mt=getCurrentMeetingDraft();
+  const members=getGaMembers();
+  const list=members.length?members:[{name:'',role:'عضو جمعية عامة'}];
+  const allHtml=list.map(m=>buildInvitationHtml(mt,m.name,m.role)).join('');
+  const fullHtml=`<style>@page{size:A4;margin:0}@media print{div[style*="page-break-after"]{page-break-after:always !important}}</style>${allHtml}`;
+  openPrint(fullHtml,'دعوات الجمعية العامة '+getSeasonLabel());
+}
+function sendMeetingSmsToAll(){
+  const mt=getCurrentMeetingDraft();
+  const members=getGaMembers().filter(m=>m.phone);
+  if(!members.length){toast('لا يوجد أعضاء لديهم رقم هاتف مسجَّل','error');return;}
+  const dateTxt=mt.date?new Date(mt.date).toLocaleDateString('ar-DZ'):'.........';
+  const queue=members.map(m=>({
+    id:m.id,name:m.name,phone:m.phone.replace(/\s+/g,''),
+    msg:'دعوة رسمية: يتشرف النادي الرياضي لأكاديمية '+(academy.name||'')+' بدعوتكم لحضور الجمعية العامة '+mt.type+' يوم '+dateTxt+' على الساعة '+(mt.time||'')+' بـ'+mt.location+'. حضوركم يشرفنا.'
+  }));
+  smsQueue=queue;smsQueueIdx=0;
+  openSmsQueueModal();
+}
+function copyInvitationText(){
+  const mt=getCurrentMeetingDraft();
+  const year=getSeasonLabel();
+  const dateTxt=mt.date?new Date(mt.date).toLocaleDateString('ar-DZ'):'.........';
+  const text='📢 دعوة رسمية\n\n'
+    +'يتشرف مكتب النادي الرياضي لأكاديمية '+(academy.name||'')+' - '+(academy.city||'')+' بدعوة السادة أعضاء الجمعية العامة لحضور أشغال الجمعية العامة '+mt.type+' لسنة '+year+'.\n\n'
+    +'📅 التاريخ: '+dateTxt+'\n'
+    +'🕐 التوقيت: '+(mt.time||'.........')+'\n'
+    +'📍 المكان: '+mt.location+'\n\n'
+    +'حضوركم يشرفنا 🤝';
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(()=>toast('تم نسخ نص الدعوة 📋 — الصقه في واتساب أو فيسبوك'));
+  } else {
+    const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();
+    try{document.execCommand('copy');toast('تم نسخ نص الدعوة 📋');}catch(e){toast('تعذر النسخ التلقائي','error');}
+    ta.remove();
+  }
+}
+
+/* ---------- برنامج العمل والميزانية التقديرية ---------- */
+function openWorkProgramEditor(){
+  const w=getWorkProgram();
+  window._wpTech=[...w.technical];window._wpComp=[...w.competitive];window._wpAdmin=[...w.administrative];
+  window._wpInc=JSON.parse(JSON.stringify(w.budgetIncome));window._wpExp=JSON.parse(JSON.stringify(w.budgetExpenses));
+  const box=document.getElementById('seasonCenterBody');
+  box.innerHTML=`
+    <div class="ab-sec-title">1️⃣ الجانب الفني والتكويني</div>
+    <div id="wpTechList"></div><button class="add-btn" onclick="wpAddItem('wpTech')">➕ إضافة نقطة</button>
+    <div class="ab-sec-title">2️⃣ الجانب التنافسي والنشاطات</div>
+    <div id="wpCompList"></div><button class="add-btn" onclick="wpAddItem('wpComp')">➕ إضافة نقطة</button>
+    <div class="ab-sec-title">3️⃣ الجانب الإداري واللوجستي</div>
+    <div id="wpAdminList"></div><button class="add-btn" onclick="wpAddItem('wpAdmin')">➕ إضافة نقطة</button>
+
+    <div class="ab-sec-title">💰 المداخيل المتوقعة</div>
+    <div id="wpIncList"></div><button class="add-btn" onclick="wpAddRow('wpInc')">➕ إضافة بند مداخيل</button>
+
+    <div class="ab-sec-title">💸 المصاريف المتوقعة</div>
+    <div id="wpExpList"></div><button class="add-btn" onclick="wpAddRow('wpExp')">➕ إضافة بند مصاريف</button>
+
+    <button class="btn-primary" style="margin-top:16px" onclick="saveWorkProgram()">💾 حفظ البرنامج</button>
+    <button class="add-btn" style="width:100%;justify-content:center;margin-top:8px" onclick="printWorkProgram()">🖨️ طباعة برنامج العمل والميزانية</button>
+    <button class="btn-cancel" style="width:100%;margin-top:8px" onclick="openSeasonCenter()">← رجوع</button>
+  `;
+  wpRenderList('wpTech','_wpTech');wpRenderList('wpComp','_wpComp');wpRenderList('wpAdmin','_wpAdmin');
+  wpRenderRows('wpInc','_wpInc');wpRenderRows('wpExp','_wpExp');
+  openModal('seasonCenterOverlay');
+}
+function wpRenderList(key,arrName){
+  const el=document.getElementById(key+'List');
+  el.innerHTML=window[arrName].map((v,i)=>`
+    <div style="display:flex;gap:6px;margin-bottom:6px">
+      <input type="text" value="${v}" oninput="window.${arrName}[${i}]=this.value">
+      <button class="icon-act d" onclick="wpRemoveItem('${key}','${arrName}',${i})">🗑️</button>
+    </div>`).join('')||'<div style="font-size:11px;color:var(--text3)">لا توجد عناصر بعد</div>';
+}
+function wpAddItem(key){
+  const map={wpTech:'_wpTech',wpComp:'_wpComp',wpAdmin:'_wpAdmin'};
+  window[map[key]].push('');wpRenderList(key,map[key]);
+}
+function wpRemoveItem(key,arrName,i){window[arrName].splice(i,1);wpRenderList(key,arrName);}
+function wpRenderRows(key,arrName){
+  const el=document.getElementById(key+'List');
+  el.innerHTML=window[arrName].map((r,i)=>`
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px">
+      <input type="text" placeholder="البيان" value="${r.label||''}" oninput="window.${arrName}[${i}].label=this.value" style="margin-bottom:6px">
+      <div style="display:flex;gap:6px">
+        <input type="number" placeholder="القيمة (د.ج)" value="${r.amount||''}" oninput="window.${arrName}[${i}].amount=parseFloat(this.value)||0">
+        <input type="text" placeholder="ملاحظات" value="${r.note||''}" oninput="window.${arrName}[${i}].note=this.value">
+        <button class="icon-act d" onclick="wpRemoveRow('${key}','${arrName}',${i})">🗑️</button>
+      </div>
+    </div>`).join('')||'<div style="font-size:11px;color:var(--text3)">لا توجد بنود بعد</div>';
+}
+function wpAddRow(key){
+  const map={wpInc:'_wpInc',wpExp:'_wpExp'};
+  window[map[key]].push({label:'',amount:0,note:''});wpRenderRows(key,map[key]);
+}
+function wpRemoveRow(key,arrName,i){window[arrName].splice(i,1);wpRenderRows(key,arrName);}
+function saveWorkProgram(){
+  const w=getWorkProgram();
+  w.technical=window._wpTech.filter(v=>v.trim());
+  w.competitive=window._wpComp.filter(v=>v.trim());
+  w.administrative=window._wpAdmin.filter(v=>v.trim());
+  w.budgetIncome=window._wpInc.filter(r=>r.label&&r.label.trim());
+  w.budgetExpenses=window._wpExp.filter(r=>r.label&&r.label.trim());
+  academy.workProgram=w;
+  save();
+  toast('تم حفظ برنامج العمل والميزانية ✅');
+  openWorkProgramEditor();
+}
+function printWorkProgram(){
+  const w=getWorkProgram();
+  const year=nextSeasonYear();
+  const bullets=arr=>arr.length?'<ul style="font-size:12.5px;line-height:2;padding-right:20px">'+arr.map(v=>`<li>${v}</li>`).join('')+'</ul>':'<p style="font-size:12px;color:#666">لا توجد بنود مضافة بعد.</p>';
+  const totalInc=w.budgetIncome.reduce((s,r)=>s+(+r.amount||0),0);
+  const totalExp=w.budgetExpenses.reduce((s,r)=>s+(+r.amount||0),0);
+  const reserve=totalInc-totalExp;
+  const incRows=w.budgetIncome.map(r=>`<tr><td>${r.label}</td><td>${(+r.amount||0).toLocaleString()}</td><td>${r.note||''}</td></tr>`).join('')||'<tr><td colspan="3" style="text-align:center;color:#666">لا توجد بنود</td></tr>';
+  const expRows=w.budgetExpenses.map(r=>`<tr><td>${r.label}</td><td>${(+r.amount||0).toLocaleString()}</td><td>${r.note||''}</td></tr>`).join('')||'<tr><td colspan="3" style="text-align:center;color:#666">لا توجد بنود</td></tr>';
+  const html=printHeader()+`
+    <div style="text-align:center;font-size:12px;line-height:1.9;margin-bottom:16px">
+      الجمهورية الجزائرية الديمقراطية الشعبية<br>وزارة الشباب والرياضة<br>
+      النادي الرياضي: أكاديمية ${academy.name||''} - ${academy.city||''} (CSAJTB)<br>
+      النشاط: كرة القدم
+    </div>
+    <h3 style="text-align:center">برنامج العمل والميزانية التقديرية لسنة ${year}</h3>
+    <p style="font-size:12.5px;line-height:2;margin:14px 0">
+      بناءً على حصيلة مسيرة الأكاديمية الناجحة في سنة ${getSeasonLabel()} والتحديات التي واجهتها، قمنا بإعداد برنامج عمل طموح وواقعي لسنة ${year}،
+      يهدف إلى معالجة النقائص السابقة، مع ميزانية تقديرية ومتوازنة تدعم هذا التوسع.
+    </p>
+    <h4 style="margin:16px 0 8px">أولاً: برنامج العمل السنوي لسنة ${year}</h4>
+    <p style="font-size:12.5px;font-weight:800;margin-bottom:4px">1 - الجانب الفني والتكويني:</p>
+    ${bullets(w.technical)}
+    <p style="font-size:12.5px;font-weight:800;margin:10px 0 4px">2 - الجانب التنافسي والنشاطات:</p>
+    ${bullets(w.competitive)}
+    <p style="font-size:12.5px;font-weight:800;margin:10px 0 4px">3 - الجانب الإداري واللوجستي:</p>
+    ${bullets(w.administrative)}
+    <h4 style="margin:16px 0 8px">ثانياً: الميزانية التقديرية لسنة ${year}</h4>
+    <p style="font-size:12.5px;font-weight:800;margin-bottom:6px">1. المداخيل المتوقعة (الإيرادات)</p>
+    <table><thead><tr><th>البيان</th><th>القيمة التقديرية (د.ج)</th><th>الملاحظات</th></tr></thead><tbody>${incRows}
+      <tr><td><strong>إجمالي المداخيل التقديرية</strong></td><td><strong>${totalInc.toLocaleString()}</strong></td><td></td></tr>
+    </tbody></table>
+    <p style="font-size:12.5px;font-weight:800;margin:14px 0 6px">2. المصاريف المتوقعة (النفقات)</p>
+    <table><thead><tr><th>البيان</th><th>القيمة التقديرية (د.ج)</th><th>الملاحظات</th></tr></thead><tbody>${expRows}
+      <tr><td><strong>إجمالي المصاريف التقديرية</strong></td><td><strong>${totalExp.toLocaleString()}</strong></td><td></td></tr>
+    </tbody></table>
+    <p style="font-size:12.5px;margin-top:14px"><strong>3. الفارق التقديري (الاحتياطي):</strong> الرصيد المتوقع نهاية ${year}: حوالي <strong>${reserve.toLocaleString()} د.ج</strong> كاحتياطي للطوارئ.</p>
+    <div style="margin-top:30px;font-size:12px;font-weight:700;text-align:left">إمضاء وختم رئيس النادي الرياضي</div>
+  `;
+  openPrint(html,'برنامج العمل والميزانية '+year);
+}
+
 function openEnrEdit(playerId){
   // open month pay in range mode so user can edit multiple months
   const p=players.find(x=>x.id===playerId);if(!p)return;
