@@ -1459,6 +1459,11 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="month"]::-webk
           <div class="si-info"><div class="si-title">المزامنة بين جهازين</div><div class="si-sub">مشاركة البيانات تلقائياً برمز مشترك</div></div>
           <div class="si-arrow">›</div>
         </div>
+        <div class="settings-item" onclick="openSeasonCenter()">
+          <div class="si-icon" style="background:var(--gold-l)">📅</div>
+          <div class="si-info"><div class="si-title">إدارة السنة الرياضية</div><div class="si-sub">التقارير المالية والأدبية، إغلاق وأرشفة السنة</div></div>
+          <div class="si-arrow">›</div>
+        </div>
         <div class="settings-item" onclick="openChangePassword()">
           <div class="si-icon" style="background:rgba(255,152,0,.12)">🔑</div>
           <div class="si-info"><div class="si-title">تغيير كلمة المرور</div><div class="si-sub">تعديل كلمة مرور الدخول</div></div>
@@ -1998,6 +2003,17 @@ input[type="date"]::-webkit-calendar-picker-indicator,input[type="month"]::-webk
 </div>
 </div>
 
+<div class="overlay" id="seasonCenterOverlay">
+<div class="modal" style="max-width:560px">
+  <div class="modal-handle"></div>
+  <div class="modal-title">📅 إدارة السنة الرياضية</div>
+  <div id="seasonCenterBody"></div>
+  <div class="form-actions">
+    <button class="btn-cancel" style="width:100%" onclick="closeModal('seasonCenterOverlay')">إغلاق</button>
+  </div>
+</div>
+</div>
+
 <!-- Academy Settings Modal -->
 <div class="overlay" id="academySettingsOverlay">
 <div class="modal">
@@ -2145,7 +2161,7 @@ const MONTHS = ['جانفي','فيفري','مارس','أفريل','ماي','جو
 const MONTH_ABBR = ['جان','فيف','مار','أفر','ماي','جوا','جوي','أوت','سبت','أكت','نوف','ديس'];
 const DAYS_AR = ['ح','ن','ث','ر','خ','ج','س'];
 
-let players = [], coaches = [], schedules = [], attendance = [], transactions = [], ratings = [], enrollments = [], notifications = [];
+let players = [], coaches = [], schedules = [], attendance = [], transactions = [], ratings = [], enrollments = [], notifications = [], seasons = [];
 let academy = {name:'أكاديمية المواهب الشابة',city:'بئر قاصد علي',phone:'',fee:3000,holidayMonth:null};
 let currentFilter = 'ALL';
 let currentView = 'list';
@@ -2165,6 +2181,7 @@ function save(){
   if(!academy.__meta)academy.__meta={};
   academy.__meta.updatedAt=Date.now();
   localStorage.setItem('aca_v2',JSON.stringify({players,coaches,schedules,attendance,transactions,ratings,enrollments,notifications,academy}));
+  localStorage.setItem('aca_seasons',JSON.stringify(seasons));
   if(typeof scheduleSyncPush==='function')scheduleSyncPush();
 }
 function load(){
@@ -2177,6 +2194,8 @@ function load(){
       enrollments=p.enrollments||[];notifications=p.notifications||[];
       if(p.academy)academy=Object.assign(academy,p.academy);
     }
+    const s=localStorage.getItem('aca_seasons');
+    seasons=s?JSON.parse(s):[];
   }catch(e){console.error(e)}
   if(!academy.__meta)academy.__meta={updatedAt:0};
   if(typeof academy.__meta.updatedAt!=='number')academy.__meta.updatedAt=0;
@@ -4212,6 +4231,460 @@ function skipCurrentQueueSms(){
 function cancelSmsQueue(){
   closeModal('smsQueueOverlay');
   smsQueue=[];smsQueueIdx=0;
+}
+
+// ============================================================
+// SEASON MANAGEMENT — إدارة السنة الرياضية (تقارير رسمية + إغلاق وأرشفة)
+// ============================================================
+function getSeasonLabel(){
+  return academy.currentSeasonLabel || String(new Date().getFullYear());
+}
+function getReportData(){
+  if(!academy.reportData) academy.reportData={};
+  const d=academy.reportData;
+  if(d.wilaya==null)d.wilaya='';
+  if(d.trainingLocation==null)d.trainingLocation='';
+  if(d.seasonStartDate==null)d.seasonStartDate='';
+  if(d.restPeriod==null)d.restPeriod='';
+  if(d.resumeNote==null)d.resumeNote='';
+  if(d.bankAccountNote==null)d.bankAccountNote='';
+  if(d.bankOpenBalance==null)d.bankOpenBalance=0;
+  if(d.cashOpenBalance==null)d.cashOpenBalance=0;
+  if(d.bankContribution==null)d.bankContribution=0;
+  if(d.stateSubsidy==null)d.stateSubsidy=0;
+  if(d.subscriptionsIncome==null)d.subscriptionsIncome=null; // null = auto من بيانات التطبيق
+  if(d.checkExpenses==null)d.checkExpenses=0;
+  if(d.accountExpenses==null)d.accountExpenses=null; // null = auto
+  if(d.bankCloseBalance==null)d.bankCloseBalance=0;
+  if(d.cashCloseBalance==null)d.cashCloseBalance=0;
+  if(!Array.isArray(d.competitions))d.competitions=[];
+  if(!Array.isArray(d.difficulties))d.difficulties=[];
+  if(!Array.isArray(d.futureGoals))d.futureGoals=[];
+  if(d.president==null)d.president='';
+  if(d.treasurer==null)d.treasurer='';
+  return d;
+}
+function computeFinancialReport(){
+  const income=transactions.filter(t=>t.type==='payment'||t.type==='income').reduce((s,t)=>s+t.amount,0);
+  const expenses=transactions.filter(t=>t.type==='expense'||t.type==='deduct').reduce((s,t)=>s+t.amount,0);
+  const cats=['U8','U10','U14'];
+  const byCategory=cats.map(cat=>{
+    const names=players.filter(p=>p.category===cat).map(p=>p.name);
+    const collected=transactions.filter(t=>t.type==='payment'&&names.includes(t.player)).reduce((s,t)=>s+t.amount,0);
+    return{cat,collected};
+  });
+  let totalDue=0,totalCollected=0;
+  const outstanding=[];
+  players.forEach(p=>{
+    if(p.freePlayer)return;
+    const stats=calcEnrStats(getEnrollment(p.id));
+    totalDue+=stats.totalDue;totalCollected+=stats.totalPaid;
+    if(stats.remaining>0)outstanding.push({name:p.name,category:p.category,remaining:stats.remaining});
+  });
+  outstanding.sort((a,b)=>b.remaining-a.remaining);
+  return{income,expenses,net:income-expenses,byCategory,totalDue,totalCollected,outstanding};
+}
+function computeNarrativeReport(){
+  const cats=['U8','U10','U14'];
+  const byCategory=cats.map(cat=>({cat,count:players.filter(p=>p.category===cat).length}));
+  const totalPlayers=players.length;
+  const activePlayers=players.filter(p=>p.status==='active').length;
+  const newPlayersThisYear=players.filter(p=>p.joinDate&&new Date(p.joinDate).getFullYear()===new Date().getFullYear()).length;
+  let presentCount=0,totalMarks=0;
+  attendance.forEach(a=>{if(a.records)Object.values(a.records).forEach(r=>{totalMarks++;if(r==='present')presentCount++;});});
+  const attendanceRate=totalMarks?Math.round(presentCount/totalMarks*100):0;
+  const ratedPlayers=ratings.filter(r=>r.stars);
+  const avgRating=ratedPlayers.length?(ratedPlayers.reduce((s,r)=>s+r.stars,0)/ratedPlayers.length).toFixed(1):'—';
+  return{totalPlayers,activePlayers,byCategory,totalCoaches:coaches.length,totalSessions:schedules.length,
+    attendanceSessions:attendance.length,attendanceRate,newPlayersThisYear,avgRating};
+}
+
+// ---- تحويل رقم إلى كتابة عربية (للمبلغ المالي كتابياً) ----
+function numberToArabicWords(num){
+  num=Math.round(num*100)/100;
+  const intPart=Math.floor(num);
+  const decPart=Math.round((num-intPart)*100);
+  const ones=['','واحد','اثنان','ثلاثة','أربعة','خمسة','ستة','سبعة','ثمانية','تسعة'];
+  const teens=['عشرة','أحد عشر','اثنا عشر','ثلاثة عشر','أربعة عشر','خمسة عشر','ستة عشر','سبعة عشر','ثمانية عشر','تسعة عشر'];
+  const tens=['','عشرة','عشرون','ثلاثون','أربعون','خمسون','ستون','سبعون','ثمانون','تسعون'];
+  const hundreds=['','مائة','مائتان','ثلاثمائة','أربعمائة','خمسمائة','ستمائة','سبعمائة','ثمانمائة','تسعمائة'];
+  function threeDigits(n){
+    let parts=[];
+    const h=Math.floor(n/100), t=Math.floor((n%100)/10), o=n%10;
+    if(h)parts.push(hundreds[h]);
+    const rem=n%100;
+    if(rem>=10&&rem<20){parts.push(teens[rem-10]);}
+    else{ if(o)parts.push(ones[o]); if(t)parts.push(tens[t]); }
+    return parts.join(' و');
+  }
+  function chunkToWords(n,scale){
+    if(n===0)return '';
+    let words=threeDigits(n);
+    if(scale===1){
+      if(n===1)return 'ألف';
+      if(n===2)return 'ألفان';
+      if(n>=3&&n<=10)return words+' آلاف';
+      return words+' ألفاً';
+    }
+    if(scale===2){
+      if(n===1)return 'مليون';
+      if(n===2)return 'مليونان';
+      if(n>=3&&n<=10)return words+' ملايين';
+      return words+' مليوناً';
+    }
+    return words;
+  }
+  if(intPart===0&&decPart===0)return 'صفر دينار جزائري';
+  const millions=Math.floor(intPart/1000000);
+  const thousands=Math.floor((intPart%1000000)/1000);
+  const remainder=intPart%1000;
+  let segments=[];
+  if(millions)segments.push(chunkToWords(millions,2));
+  if(thousands)segments.push(chunkToWords(thousands,1));
+  if(remainder)segments.push(threeDigits(remainder));
+  let text=segments.join(' و')||'صفر';
+  text+=' ديناراً جزائرياً';
+  if(decPart>0)text+=' و'+threeDigits(decPart)+' سنتيماً';
+  return text;
+}
+
+function printFinancialReport(){
+  const rd=getReportData();
+  const app=computeFinancialReport();
+  const year=getSeasonLabel();
+  const subsIncome=rd.subscriptionsIncome!=null?rd.subscriptionsIncome:app.income;
+  const accountExp=rd.accountExpenses!=null?rd.accountExpenses:app.expenses;
+  const totalIncome=(+rd.bankOpenBalance||0)+(+rd.cashOpenBalance||0)+(+rd.bankContribution||0)+subsIncome+(+rd.stateSubsidy||0);
+  const totalExpenses=(+rd.checkExpenses||0)+accountExp;
+  const totalRemaining=(+rd.bankCloseBalance||0)+(+rd.cashCloseBalance||0);
+  const html=printHeader()+`
+    <div style="text-align:center;font-size:12px;line-height:1.9;margin-bottom:16px">
+      الجمهورية الجزائرية الديمقراطية الشعبية<br>
+      وزارة الشباب والرياضة<br>
+      ${rd.wilaya?`مديرية الشباب والرياضة لولاية ${rd.wilaya}<br>`:''}
+      النادي الرياضي لـ${academy.name||'الأكاديمية'}<br>
+      السنة المالية ${year}<br>
+      الفترة المحاسبية: من 01/01/${year} إلى 31/12/${year}
+    </div>
+    <h3 style="text-align:center">التقرير المالي للسنة المالية والرياضية ${year}</h3>
+    <p style="font-size:12.5px;line-height:2;margin:14px 0">
+      عملاً بأحكام القوانين المنظمة للجمعيات والنوادي الرياضية، ونزولاً عند مقتضيات الشفافية والمحاسبة، يضع مكتب النادي الرياضي لـ${academy.name||'الأكاديمية'}
+      بين أيدي السادة أعضاء الجمعية العامة التقرير المالي المفصل للسنة المالية ${year}.
+      يوضح هذا التقرير كافة العمليات المالية (مداخيل ومصاريف) التي تمت خلال الفترة الممتدة من 01 جانفي ${year} إلى 31 ديسمبر ${year}، وهي مفصلة كالتالي:
+    </p>
+    <h4 style="margin:16px 0 8px">أولاً: باب المداخيل (الإيرادات)</h4>
+    <p style="font-size:12.5px;margin-bottom:8px">تم تسجيل المداخيل الإجمالية للنادي خلال هذه الفترة بمبلغ <strong>${totalIncome.toLocaleString()} د.ج</strong>، وهي موزعة حسب الجدول الآتي:</p>
+    <table><thead><tr><th>الرقم</th><th>التعيين (بيان المداخيل)</th><th>المبلغ (د.ج)</th></tr></thead><tbody>
+      <tr><td>1</td><td>رصيد بداية الفترة 01/01/${year} (الحساب البنكي)</td><td>${(+rd.bankOpenBalance||0).toLocaleString()}</td></tr>
+      <tr><td>2</td><td>رصيد بداية الفترة 01/01/${year} (حساب الصندوق)</td><td>${(+rd.cashOpenBalance||0).toLocaleString()}</td></tr>
+      <tr><td>3</td><td>المساهمات في البنك (تحويل مبلغ من الصندوق إلى البنك)</td><td>${(+rd.bankContribution||0).toLocaleString()}</td></tr>
+      <tr><td>4</td><td>المساهمات في الصندوق (اشتراكات الأعضاء واللاعبين)</td><td>${subsIncome.toLocaleString()}</td></tr>
+      <tr><td>5</td><td>إعانات الدولة في البنك (البلدية، مديرية الشباب والرياضة، المجلس الولائي)</td><td>${(+rd.stateSubsidy||0).toLocaleString()||'0.00 (لا شيء)'}</td></tr>
+      <tr><td>6</td><td><strong>مجموع المداخيل</strong></td><td><strong>${totalIncome.toLocaleString()}</strong></td></tr>
+    </tbody></table>
+    ${rd.bankAccountNote?`<p style="font-size:11.5px;color:#666;margin-top:6px">ملاحظة: ${rd.bankAccountNote}</p>`:''}
+    <h4 style="margin:16px 0 8px">ثانياً: باب المصاريف (النفقات)</h4>
+    <p style="font-size:12.5px;margin-bottom:8px">بلغت القيمة الإجمالية للمصاريف والنفقات خلال السنة <strong>${totalExpenses.toLocaleString()} د.ج</strong>، صُرفت لتغطية احتياجات الأكاديمية واللاعبين كما يلي:</p>
+    <table><thead><tr><th>الرقم</th><th>التعيين (بيان المصاريف)</th><th>المبلغ (د.ج)</th></tr></thead><tbody>
+      <tr><td>1</td><td>مصاريف تمت بشيك (مصاريف بنكية - اقتطاعات البنك)</td><td>${(+rd.checkExpenses||0).toLocaleString()}</td></tr>
+      <tr><td>2</td><td>مصاريف تمت على الحساب (مختلف المصاريف التي تخص اللاعبين والمدربين مع مصاريف أخرى)</td><td>${accountExp.toLocaleString()}</td></tr>
+      <tr><td>3</td><td><strong>مجموع المصاريف</strong></td><td><strong>${totalExpenses.toLocaleString()}</strong></td></tr>
+    </tbody></table>
+    <h4 style="margin:16px 0 8px">ثالثاً: الحصيلة المالية والوضعية النهائية (الرصيد)</h4>
+    <p style="font-size:12.5px;margin-bottom:8px">بناءً على الفارق بين المداخيل والمصاريف، فإن الوضعية المحاسبية الختامية للنادي إلى غاية 31 ديسمبر ${year} أسفرت عن رصيد ${totalRemaining>=0?'إيجابي':'سلبي'} متبقٍ مفصل كما يلي:</p>
+    <table><thead><tr><th>الرقم</th><th>التعيين (بيان الرصيد)</th><th>المبلغ (د.ج)</th></tr></thead><tbody>
+      <tr><td>1</td><td>رصيد البنك في نهاية الفترة 31/12/${year}</td><td>${(+rd.bankCloseBalance||0).toLocaleString()}</td></tr>
+      <tr><td>2</td><td>رصيد الصندوق في نهاية الفترة 31/12/${year}</td><td>${(+rd.cashCloseBalance||0).toLocaleString()}</td></tr>
+      <tr><td>3</td><td><strong>مجموع الرصيد المتبقي</strong></td><td><strong>${totalRemaining.toLocaleString()}</strong></td></tr>
+    </tbody></table>
+    <p style="font-size:12.5px;margin-top:10px"><strong>المبلغ كتابياً:</strong> يقدَّر الرصيد في نهاية الفترة (31/12/${year}) بـ: ${numberToArabicWords(totalRemaining)} (${totalRemaining.toLocaleString()} د.ج).</p>
+    <p style="font-size:12.5px;line-height:2;margin-top:18px">
+      إن هذه الوضعية المحاسبية تبرز التسيير العقلاني لموارد الأكاديمية المعتمدة أساساً على اشتراكات الأعضاء. نضع هذا التقرير بين أيديكم للمناقشة والمصادقة.
+    </p>
+    <div style="margin-top:30px;font-size:12px">حُرر بـ ${academy.city||''} في: ....................................................</div>
+    <div style="display:flex;justify-content:space-between;margin-top:40px;font-size:12px;font-weight:700">
+      <div>توقيع وختم رئيس النادي الرياضي${rd.president?'<br>'+rd.president:''}</div>
+      <div>توقيع وختم أمين المال${rd.treasurer?'<br>'+rd.treasurer:''}</div>
+    </div>
+  `;
+  openPrint(html,'التقرير المالي '+year);
+}
+
+function printNarrativeReport(){
+  const rd=getReportData();
+  const year=getSeasonLabel();
+  const coachNames=coaches.map(c=>c.name).join(' و')||'الطاقم الفني';
+  const compHtml=rd.competitions.length
+    ? rd.competitions.map((c,i)=>`
+      <p style="font-size:12.5px;line-height:1.9;margin:8px 0"><strong>${i+1}. ${c.name||''} ${c.date?'('+c.date+')':''}:</strong><br>
+      ${c.place?'المكان: '+c.place+'.<br>':''}${c.categories?'الفئات المشاركة: '+c.categories+'.<br>':''}${c.result?'النتيجة: '+c.result+'.':''}</p>`).join('')
+    : '<p style="font-size:12.5px;color:#666">لم تُسجَّل مشاركات خارجية خلال هذه السنة.</p>';
+  const diffHtml=rd.difficulties.length
+    ? '<ul style="font-size:12.5px;line-height:2;padding-right:20px">'+rd.difficulties.map(d=>`<li>${d}</li>`).join('')+'</ul>'
+    : '<p style="font-size:12.5px;color:#666">لم تُسجَّل صعوبات تُذكر خلال هذه السنة.</p>';
+  const goalsHtml=rd.futureGoals.length
+    ? '<ul style="font-size:12.5px;line-height:2;padding-right:20px">'+rd.futureGoals.map(g=>`<li>${g}</li>`).join('')+'</ul>'
+    : '<p style="font-size:12.5px;color:#666">مواصلة العمل وفق نفس الأهداف التربوية والرياضية للنادي.</p>';
+  const html=printHeader()+`
+    <div style="text-align:center;font-size:12px;line-height:1.9;margin-bottom:16px">
+      الجمهورية الجزائرية الديمقراطية الشعبية<br>
+      وزارة الشباب والرياضة<br>
+      النادي الرياضي: ${academy.name||'الأكاديمية'}<br>
+      السنة الرياضية: ${year}<br>
+      النشاط: كرة القدم
+    </div>
+    <h3 style="text-align:center">التقرير الأدبي لنشاط ${year}</h3>
+    <p style="font-size:12.5px;line-height:2;margin:14px 0">
+      <strong>مقدمة:</strong> بسم الله الرحمن الرحيم، والصلاة والسلام على أشرف المرسلين. السادة أعضاء الجمعية العامة، السادة ممثلي السلطات المحلية، ضيوفنا الكرام، السلام عليكم ورحمة الله وبركاته.
+      نجتمع اليوم في أشغال الجمعية العامة العادية لنعرض على مسامعكم الكريمة التقرير الأدبي والرياضي الذي يلخص مسيرة النادي الرياضي "${academy.name||'الأكاديمية'}" خلال سنة ${year}.
+      لقد كانت سنة مليئة بالنشاط والعمل الدؤوب، حيث سعينا من خلالها إلى تجسيد أهدافنا التربوية والرياضية المتمثلة في تأطير الشباب، اكتشاف المواهب، وتكوين جيل رياضي يتخلق بالروح الرياضية العالية.
+      وقد تركز نشاطنا خلال هذه السنة في المحاور الأساسية التالية:
+    </p>
+    <h4 style="margin:16px 0 8px">أولاً: البرنامج التدريبي والتأطير الفني</h4>
+    <p style="font-size:12.5px;line-height:2">
+      حرصاً من المكتب التنفيذي للنادي على توفير بيئة رياضية محترفة، تم تسطير برنامج تدريبي منتظم ومدروس، أشرف عليه الطاقم الفني للأكاديمية
+      (بقيادة المدرِّبين ${coachNames})، واستهدف الفئات العمرية الصغرى المتمثلة في (U8 - U10 - U14). وقد تم تنفيذ هذا البرنامج وفق الترتيبات التالية:
+    </p>
+    <ul style="font-size:12.5px;line-height:2;padding-right:20px">
+      <li><strong>مكان التدريب:</strong> ${rd.trainingLocation||'.....................'}</li>
+      <li><strong>أيام التدريب:</strong> تمت برمجة الحصص التدريبية بصفة دورية أيام (الثلاثاء، الجمعة، والسبت) من كل أسبوع.</li>
+      <li><strong>الجدول الزمني للموسم:</strong>
+        <ul style="padding-right:18px;margin-top:4px">
+          <li>الانطلاقة: ${rd.seasonStartDate||'.....................'}</li>
+          ${rd.restPeriod?`<li>فترة الراحة الاسترجاعية: ${rd.restPeriod}</li>`:''}
+          ${rd.resumeNote?`<li>الاستئناف: ${rd.resumeNote}</li>`:''}
+        </ul>
+      </li>
+    </ul>
+    <h4 style="margin:16px 0 8px">ثانياً: المشاركات والمنافسات الرياضية (الحصيلة الفنية)</h4>
+    <p style="font-size:12.5px;line-height:2">
+      إلى جانب التكوين والتدريب، كان للاحتكاك والمنافسة دور محوري في تقييم مستوى لاعبينا وتطوير قدراتهم التنافسية.
+      وقد شارك النادي خلال سنة ${year} في عدة تظاهرات رياضية ومحافل وطنية ومحلية، أبرزها:
+    </p>
+    ${compHtml}
+    <h4 style="margin:16px 0 8px">ثالثاً: الصعوبات والعراقيل التي واجهت النادي</h4>
+    <p style="font-size:12.5px;line-height:2">رغم الإرادة القوية والمجهودات المبذولة من طرف الإدارة والطاقم الفني، فقد اصطدمت مسيرتنا خلال سنة ${year} ببعض الصعوبات نلخصها في النقاط التالية:</p>
+    ${diffHtml}
+    <h4 style="margin:16px 0 8px">رابعاً: الأهداف والآفاق المستقبلية</h4>
+    <p style="font-size:12.5px;line-height:2">إن النتائج المحققة خلال سنة ${year} تزيدنا إصراراً على مواصلة المسيرة، ويواصل النادي جهوده الحثيثة في:</p>
+    ${goalsHtml}
+    <p style="font-size:12.5px;line-height:2;margin-top:14px">
+      <strong>خاتمة:</strong> في الأخير، نتقدم بجزيل الشكر والعرفان لكل من ساهم من قريب أو بعيد في إنجاح مسيرة النادي خلال هذه السنة؛ من أعضاء مكتب تنفيذي، طاقم فني، لاعبين، وأولياء أمور الذين وضعوا ثقتهم فينا،
+      متمنين أن تتضافر الجهود أكثر في الموسم القادم لتحقيق المزيد من التألق والنجاح. والسلام عليكم ورحمة الله وبركاته.
+    </p>
+    <div style="margin-top:30px;font-size:12px">${academy.city||''}، في ....................................................</div>
+    <div style="margin-top:40px;font-size:12px;font-weight:700">توقيع وختم رئيس النادي الرياضي${rd.president?'<br>'+rd.president:''}</div>
+  `;
+  openPrint(html,'التقرير الأدبي '+year);
+}
+
+// ---- نموذج إدخال بيانات التقرير السنوي (تعبئة يدوية لما لا يتتبعه التطبيق) ----
+function openReportDataForm(){
+  const rd=getReportData();
+  const box=document.getElementById('seasonCenterBody');
+  box.innerHTML=`
+    <div class="fg"><label>الولاية (لرأس التقرير المالي)</label><input type="text" id="rdWilaya" value="${rd.wilaya}" placeholder="مثال: برج بوعريريج"></div>
+    <div class="fg"><label>مكان التدريب</label><input type="text" id="rdLocation" value="${rd.trainingLocation}" placeholder='مثال: الملعب البلدي "..."'></div>
+    <div class="fg"><label>انطلاقة الموسم التدريبي</label><input type="text" id="rdStart" value="${rd.seasonStartDate}" placeholder="مثال: ماي ${getSeasonLabel()}"></div>
+    <div class="fg"><label>فترة الراحة الاسترجاعية</label><input type="text" id="rdRest" value="${rd.restPeriod}" placeholder="مثال: من 17 سبتمبر إلى 17 أكتوبر"></div>
+    <div class="fg"><label>ملاحظة الاستئناف</label><input type="text" id="rdResume" value="${rd.resumeNote}" placeholder="مثال: استؤنفت التدريبات بصفة عادية ومستمرة"></div>
+    <div style="display:flex;gap:8px">
+      <div class="fg" style="flex:1"><label>رصيد بداية الفترة (بنك)</label><input type="number" id="rdBankOpen" value="${rd.bankOpenBalance}"></div>
+      <div class="fg" style="flex:1"><label>رصيد بداية الفترة (صندوق)</label><input type="number" id="rdCashOpen" value="${rd.cashOpenBalance}"></div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <div class="fg" style="flex:1"><label>مساهمات في البنك</label><input type="number" id="rdBankContrib" value="${rd.bankContribution}"></div>
+      <div class="fg" style="flex:1"><label>إعانات الدولة</label><input type="number" id="rdSubsidy" value="${rd.stateSubsidy}"></div>
+    </div>
+    <div class="fg"><label>مداخيل الاشتراكات (فارغ = تُحسب تلقائياً من بيانات التطبيق)</label><input type="number" id="rdSubsIncome" value="${rd.subscriptionsIncome!=null?rd.subscriptionsIncome:''}" placeholder="محسوبة تلقائياً: ${computeFinancialReport().income.toLocaleString()} د.ج"></div>
+    <div class="fg"><label>ملاحظة الحساب البنكي (اختياري)</label><input type="text" id="rdBankNote" value="${rd.bankAccountNote}" placeholder="مثال: تم فتح حساب بنكي بتاريخ... ببنك..."></div>
+    <div style="display:flex;gap:8px">
+      <div class="fg" style="flex:1"><label>مصاريف بشيك</label><input type="number" id="rdCheckExp" value="${rd.checkExpenses}"></div>
+      <div class="fg" style="flex:1"><label>مصاريف على الحساب (فارغ = تلقائي)</label><input type="number" id="rdAccExp" value="${rd.accountExpenses!=null?rd.accountExpenses:''}" placeholder="تلقائي: ${computeFinancialReport().expenses.toLocaleString()} د.ج"></div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <div class="fg" style="flex:1"><label>رصيد البنك آخر الفترة</label><input type="number" id="rdBankClose" value="${rd.bankCloseBalance}"></div>
+      <div class="fg" style="flex:1"><label>رصيد الصندوق آخر الفترة</label><input type="number" id="rdCashClose" value="${rd.cashCloseBalance}"></div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <div class="fg" style="flex:1"><label>اسم رئيس النادي</label><input type="text" id="rdPresident" value="${rd.president}"></div>
+      <div class="fg" style="flex:1"><label>اسم أمين المال</label><input type="text" id="rdTreasurer" value="${rd.treasurer}"></div>
+    </div>
+
+    <div class="ab-sec-title">🏆 المشاركات الرياضية</div>
+    <div id="rdCompList"></div>
+    <button class="add-btn" onclick="rdAddComp()">➕ إضافة مشاركة</button>
+
+    <div class="ab-sec-title">⚠️ الصعوبات والعراقيل</div>
+    <div id="rdDiffList"></div>
+    <button class="add-btn" onclick="rdAddDiff()">➕ إضافة صعوبة</button>
+
+    <div class="ab-sec-title">🎯 الأهداف المستقبلية</div>
+    <div id="rdGoalList"></div>
+    <button class="add-btn" onclick="rdAddGoal()">➕ إضافة هدف</button>
+
+    <button class="btn-primary" style="margin-top:18px" onclick="saveReportData()">💾 حفظ بيانات التقرير</button>
+    <button class="btn-cancel" style="width:100%;margin-top:8px" onclick="openSeasonCenter()">← رجوع</button>
+  `;
+  window._rdComps=JSON.parse(JSON.stringify(rd.competitions));
+  window._rdDiffs=[...rd.difficulties];
+  window._rdGoals=[...rd.futureGoals];
+  rdRenderComps();rdRenderDiffs();rdRenderGoals();
+  openModal('seasonCenterOverlay');
+}
+function rdRenderComps(){
+  document.getElementById('rdCompList').innerHTML=window._rdComps.map((c,i)=>`
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px">
+      <input type="text" placeholder="اسم الدورة" value="${c.name||''}" oninput="window._rdComps[${i}].name=this.value" style="margin-bottom:6px">
+      <div style="display:flex;gap:6px;margin-bottom:6px">
+        <input type="text" placeholder="التاريخ" value="${c.date||''}" oninput="window._rdComps[${i}].date=this.value">
+        <input type="text" placeholder="المكان" value="${c.place||''}" oninput="window._rdComps[${i}].place=this.value">
+      </div>
+      <input type="text" placeholder="الفئات المشاركة" value="${c.categories||''}" oninput="window._rdComps[${i}].categories=this.value" style="margin-bottom:6px">
+      <div style="display:flex;gap:6px">
+        <input type="text" placeholder="النتيجة" value="${c.result||''}" oninput="window._rdComps[${i}].result=this.value">
+        <button class="icon-act d" onclick="rdRemoveComp(${i})">🗑️</button>
+      </div>
+    </div>`).join('')||'<div style="font-size:11px;color:var(--text3)">لا توجد مشاركات مضافة بعد</div>';
+}
+function rdAddComp(){window._rdComps.push({name:'',date:'',place:'',categories:'',result:''});rdRenderComps();}
+function rdRemoveComp(i){window._rdComps.splice(i,1);rdRenderComps();}
+function rdRenderDiffs(){
+  document.getElementById('rdDiffList').innerHTML=window._rdDiffs.map((d,i)=>`
+    <div style="display:flex;gap:6px;margin-bottom:6px">
+      <input type="text" value="${d}" oninput="window._rdDiffs[${i}]=this.value">
+      <button class="icon-act d" onclick="rdRemoveDiff(${i})">🗑️</button>
+    </div>`).join('')||'<div style="font-size:11px;color:var(--text3)">لا توجد صعوبات مضافة بعد</div>';
+}
+function rdAddDiff(){window._rdDiffs.push('');rdRenderDiffs();}
+function rdRemoveDiff(i){window._rdDiffs.splice(i,1);rdRenderDiffs();}
+function rdRenderGoals(){
+  document.getElementById('rdGoalList').innerHTML=window._rdGoals.map((g,i)=>`
+    <div style="display:flex;gap:6px;margin-bottom:6px">
+      <input type="text" value="${g}" oninput="window._rdGoals[${i}]=this.value">
+      <button class="icon-act d" onclick="rdRemoveGoal(${i})">🗑️</button>
+    </div>`).join('')||'<div style="font-size:11px;color:var(--text3)">لا توجد أهداف مضافة بعد</div>';
+}
+function rdAddGoal(){window._rdGoals.push('');rdRenderGoals();}
+function rdRemoveGoal(i){window._rdGoals.splice(i,1);rdRenderGoals();}
+function saveReportData(){
+  const rd=getReportData();
+  rd.wilaya=document.getElementById('rdWilaya').value;
+  rd.trainingLocation=document.getElementById('rdLocation').value;
+  rd.seasonStartDate=document.getElementById('rdStart').value;
+  rd.restPeriod=document.getElementById('rdRest').value;
+  rd.resumeNote=document.getElementById('rdResume').value;
+  rd.bankOpenBalance=parseFloat(document.getElementById('rdBankOpen').value)||0;
+  rd.cashOpenBalance=parseFloat(document.getElementById('rdCashOpen').value)||0;
+  rd.bankContribution=parseFloat(document.getElementById('rdBankContrib').value)||0;
+  rd.stateSubsidy=parseFloat(document.getElementById('rdSubsidy').value)||0;
+  const subsVal=document.getElementById('rdSubsIncome').value;
+  rd.subscriptionsIncome=subsVal===''?null:parseFloat(subsVal);
+  rd.bankAccountNote=document.getElementById('rdBankNote').value;
+  rd.checkExpenses=parseFloat(document.getElementById('rdCheckExp').value)||0;
+  const accVal=document.getElementById('rdAccExp').value;
+  rd.accountExpenses=accVal===''?null:parseFloat(accVal);
+  rd.bankCloseBalance=parseFloat(document.getElementById('rdBankClose').value)||0;
+  rd.cashCloseBalance=parseFloat(document.getElementById('rdCashClose').value)||0;
+  rd.president=document.getElementById('rdPresident').value;
+  rd.treasurer=document.getElementById('rdTreasurer').value;
+  rd.competitions=window._rdComps.filter(c=>c.name||c.date||c.place||c.result);
+  rd.difficulties=window._rdDiffs.filter(d=>d.trim());
+  rd.futureGoals=window._rdGoals.filter(g=>g.trim());
+  academy.reportData=rd;
+  save();
+  toast('تم حفظ بيانات التقرير السنوي ✅');
+  openSeasonCenter();
+}
+
+function openSeasonCenter(){
+  const box=document.getElementById('seasonCenterBody');
+  const archivedList=seasons.slice().reverse().map(s=>`
+    <div style="display:flex;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px">
+      <div style="flex:1">
+        <div style="font-weight:800;font-size:13px">📦 السنة ${s.label}</div>
+        <div style="font-size:10.5px;color:var(--text2)">أُغلقت في ${new Date(s.closedAt).toLocaleDateString('ar-DZ')} — ${s.snapshot.players.length} لاعب</div>
+      </div>
+      <button class="icon-act" style="width:30px;height:30px" onclick="viewArchivedSeason('${s.id}')">👁️</button>
+    </div>`).join('')||'<div style="text-align:center;color:var(--text3);font-size:12px;padding:12px">لا توجد سنوات مؤرشَفة بعد</div>';
+  box.innerHTML=`
+    <div class="fg"><label>تسمية السنة الرياضية الحالية</label>
+      <input type="text" id="seasonLabelInput" value="${getSeasonLabel()}" placeholder="مثال: 2025/2026">
+    </div>
+    <button class="btn-primary" onclick="saveSeasonLabel()">💾 حفظ التسمية</button>
+    <button class="add-btn" style="width:100%;justify-content:center;margin-top:10px;background:linear-gradient(135deg,var(--purple),#5b1fb0)" onclick="openReportDataForm()">📋 بيانات التقرير السنوي (المشاركات، الصعوبات، الأرقام المالية...)</button>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="add-btn" style="flex:1;justify-content:center" onclick="printFinancialReport()">📊 التقرير المالي</button>
+      <button class="add-btn" style="flex:1;justify-content:center;background:linear-gradient(135deg,var(--blue),#1a6fd8)" onclick="printNarrativeReport()">📝 التقرير الأدبي</button>
+    </div>
+    <button class="btn-cancel" style="width:100%;margin-top:14px;background:rgba(var(--red-rgb),.1);color:var(--red);border-color:rgba(var(--red-rgb),.3)" onclick="confirmCloseSeason()">🔒 إغلاق وأرشفة السنة الرياضية</button>
+    <div class="l-hint" style="margin-top:8px">عند الإغلاق: تُحفَظ نسخة كاملة من بيانات هذه السنة (اللاعبون، الحضور، المالية، الاشتراكات) في الأرشيف، ثم تُصفَّر بيانات الحضور والمالية والاشتراكات والجدول لبدء سنة جديدة. قائمة اللاعبين والمدرِّبين والتقييمات تبقى كما هي.</div>
+    <div class="ab-sec-title" style="margin-top:22px">📦 السنوات المؤرشَفة</div>
+    ${archivedList}
+  `;
+  openModal('seasonCenterOverlay');
+}
+function saveSeasonLabel(){
+  academy.currentSeasonLabel=document.getElementById('seasonLabelInput').value.trim()||getSeasonLabel();
+  save();toast('تم حفظ تسمية السنة الرياضية ✅');
+}
+function confirmCloseSeason(){
+  showConfirm('إغلاق السنة الرياضية',
+    'سيتم أرشفة كل بيانات السنة الحالية ('+getSeasonLabel()+') وتصفير الحضور والمالية والاشتراكات والجدول لبدء سنة جديدة. هذا الإجراء لا يمكن التراجع عنه. هل أنت متأكد؟',
+    ()=>closeSeason());
+}
+function closeSeason(){
+  const label=getSeasonLabel();
+  const snapshot={
+    players:JSON.parse(JSON.stringify(players)),
+    coaches:JSON.parse(JSON.stringify(coaches)),
+    schedules:JSON.parse(JSON.stringify(schedules)),
+    attendance:JSON.parse(JSON.stringify(attendance)),
+    transactions:JSON.parse(JSON.stringify(transactions)),
+    ratings:JSON.parse(JSON.stringify(ratings)),
+    enrollments:JSON.parse(JSON.stringify(enrollments))
+  };
+  const seasonRecord={
+    id:genId(), label, closedAt:new Date().toISOString(),
+    financial:computeFinancialReport(),
+    narrative:computeNarrativeReport(),
+    snapshot
+  };
+  seasons.push(seasonRecord);
+  // تصفير بيانات السنة الجديدة مع الإبقاء على اللاعبين والمدربين والتقييمات
+  attendance=[]; transactions=[]; enrollments=[]; schedules=[];
+  players.forEach(p=>{p.paid=false;});
+  const nextYear=new Date().getFullYear()+1;
+  academy.currentSeasonLabel=String(nextYear);
+  save();
+  closeModal('seasonCenterOverlay');
+  toast('تم إغلاق وأرشفة السنة الرياضية بنجاح ✅');
+  renderDashboard();
+  if(typeof renderEnrollment==='function')renderEnrollment();
+  if(typeof renderBudget==='function')renderBudget();
+  if(typeof renderSchedule==='function')renderSchedule();
+  if(typeof renderAttendance==='function')renderAttendance();
+}
+function viewArchivedSeason(seasonId){
+  const s=seasons.find(x=>x.id===seasonId);if(!s)return;
+  const r=s.financial, n=s.narrative;
+  const catRows=n.byCategory.map(c=>`<tr><td>${c.cat}</td><td>${c.count} لاعب</td></tr>`).join('');
+  openPrint(printHeader()+`
+    <h3>أرشيف السنة الرياضية ${s.label}</h3>
+    <div style="font-size:12px;color:#666;margin-bottom:14px">أُغلقت بتاريخ ${new Date(s.closedAt).toLocaleDateString('ar-DZ')}</div>
+    <h4>ملخص مالي</h4>
+    <div style="font-size:13px;line-height:2">
+      إجمالي المداخيل: <strong style="color:#006b28">${r.income.toLocaleString()} دج</strong> —
+      إجمالي المصاريف: <strong style="color:#aa0000">${r.expenses.toLocaleString()} دج</strong> —
+      الرصيد الصافي: <strong>${r.net.toLocaleString()} دج</strong>
+    </div>
+    <h4 style="margin-top:16px">ملخص أدبي</h4>
+    <div style="font-size:13px;line-height:2">
+      عدد اللاعبين: <strong>${n.totalPlayers}</strong> — عدد المدرِّبين: <strong>${n.totalCoaches}</strong> —
+      نسبة الحضور: <strong>${n.attendanceRate}%</strong> — متوسط التقييم: <strong>${n.avgRating}</strong>
+    </div>
+    <table style="margin-top:12px"><thead><tr><th>الفئة</th><th>العدد</th></tr></thead><tbody>${catRows}</tbody></table>
+  `,'أرشيف السنة '+s.label);
 }
 function openEnrEdit(playerId){
   // open month pay in range mode so user can edit multiple months
